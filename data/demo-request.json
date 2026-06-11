@@ -1,0 +1,12 @@
+{
+  "topic": "$XYZ — a thinly-documented token with mixed signals",
+  "qualityThreshold": 80,
+  "forceEscalation": false,
+  "expect": {
+    "draftScore": 62,
+    "escalatesToSummon": true,
+    "finalApproved": true,
+    "settlementsCount": 4,
+    "note": "Topic chosen so a fast research draft scores in the 60s (real gaps Litmus will catch) — guaranteeing the escalation path fires on camera. Set forceEscalation=true for judge spot-checks."
+  }
+}

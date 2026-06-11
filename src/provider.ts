@@ -1,0 +1,177 @@
+/**
+ * Maestro — Provider module.
+ *
+ * Accepts orchestration orders, runs the fixed pipeline
+ * (research → grade → [escalate] → compose), and delivers
+ * the final vetted brief.
+ */
+
+import { runProvider } from 'croo-core';
+import type { Order, Deliverable, NegotiationEvent } from 'croo-core';
+import { buildPipeline } from './planner.js';
+import type { PipelineContext } from './planner.js';
+import { executePipeline } from './hire-engine.js';
+import { emitTrace, clearTraceLog, getTraceLog } from './trace.js';
+
+// ─── Input / Output Types ──────────────────────────────────────────
+
+interface MaestroInput {
+  topic: string;
+  qualityThreshold?: number;
+  forceEscalation?: boolean;
+}
+
+interface MaestroOutput {
+  brief: string;
+  score: number;
+  approvedBy?: string;
+  audit: Array<{
+    step: string;
+    agent: string;
+    orderId: string;
+    amount: string;
+    txHash?: string;
+    status: string;
+  }>;
+  pdfKey?: string;
+}
+
+// ─── Configuration ─────────────────────────────────────────────────
+
+function getServiceIds() {
+  return {
+    workerServiceId: process.env.WORKER_SERVICE_ID ?? 'svc_research_worker',
+    litmusServiceId: process.env.LITMUS_SERVICE_ID ?? 'svc_litmus_grader',
+    summonServiceId: process.env.SUMMON_SERVICE_ID ?? 'svc_summon_human',
+  };
+}
+
+// ─── Provider ──────────────────────────────────────────────────────
+
+/**
+ * Start the Maestro provider loop.
+ */
+export async function startMaestroProvider(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  client: any,
+  serviceId: string,
+) {
+  const serviceIds = getServiceIds();
+  const pipeline = buildPipeline(serviceIds);
+
+  return runProvider<MaestroInput, MaestroOutput>(client, {
+    serviceMatch: (event: NegotiationEvent) => {
+      return event.service_id === serviceId;
+    },
+
+    work: async (order: Order<MaestroInput>): Promise<Deliverable<MaestroOutput>> => {
+      const input = order.requirement;
+      if (!input?.topic) {
+        throw new Error('Missing required field: topic');
+      }
+
+      console.log(`[maestro] Order ${order.id}: orchestrating pipeline for "${input.topic}"`);
+
+      // Clear trace log for this run
+      clearTraceLog();
+
+      // Build pipeline context
+      const context: PipelineContext = {
+        topic: input.topic,
+        qualityThreshold: input.qualityThreshold ?? 80,
+        forceEscalation: input.forceEscalation ?? false,
+        results: {},
+      };
+
+      // Parse budget from escrow amount
+      const budgetUsdc = parseFloat(order.amount ?? '2.0');
+
+      // Execute the pipeline (sequential hires)
+      const result = await executePipeline(client, pipeline, context, budgetUsdc);
+
+      // Compose the final brief
+      const researchDraft = (result.results.research as { draft?: string })?.draft ?? 'No research available';
+      const gradeResult = result.results.grade as { score?: number; gaps?: string[] } | undefined;
+      const summonResult = result.results.escalate as { approved?: boolean; by?: string } | undefined;
+
+      const brief = composeBrief(
+        input.topic,
+        researchDraft,
+        gradeResult?.score ?? 0,
+        gradeResult?.gaps ?? [],
+        summonResult,
+      );
+
+      emitTrace('compose_done', 'Maestro', {
+        briefLength: brief.length,
+        score: gradeResult?.score,
+        approved: summonResult?.approved,
+      });
+
+      // TODO: pdfkit → uploadFile (Phase P4)
+      const pdfKey = undefined;
+
+      const output: MaestroOutput = {
+        brief,
+        score: gradeResult?.score ?? 0,
+        approvedBy: summonResult?.by,
+        audit: result.audit.map((a) => ({
+          step: a.step,
+          agent: a.agent,
+          orderId: a.orderId,
+          amount: a.amount,
+          txHash: a.txHash,
+          status: a.status,
+        })),
+        pdfKey,
+      };
+
+      return { type: 'schema', data: output };
+    },
+
+    slaGuardMs: 120_000, // 2 min guard (pipeline takes time)
+  });
+}
+
+// ─── Brief Composition ─────────────────────────────────────────────
+
+function composeBrief(
+  topic: string,
+  draft: string,
+  score: number,
+  gaps: string[],
+  summonResult?: { approved?: boolean; by?: string },
+): string {
+  const lines = [
+    `# Vetted Research Brief: ${topic}`,
+    '',
+    `**Quality Score:** ${score}/100`,
+    summonResult?.approved
+      ? `**Human Approved:** ✅ by ${summonResult.by}`
+      : score >= 80
+        ? '**Quality Gate:** ✅ Passed (score ≥ threshold)'
+        : '**Quality Gate:** ⚠️ Below threshold, no human approval obtained',
+    '',
+    '---',
+    '',
+    '## Research',
+    draft,
+    '',
+  ];
+
+  if (gaps.length > 0) {
+    lines.push('## Known Gaps');
+    lines.push(...gaps.map((g) => `- ${g}`));
+    lines.push('');
+  }
+
+  lines.push('---');
+  lines.push('_This brief was researched, graded, and composed by Maestro — an agent orchestra._');
+
+  return lines.join('\n');
+}
+
+/**
+ * Get the trace log for the current/last run (for the UI).
+ */
+export { getTraceLog } from './trace.js';
