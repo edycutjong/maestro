@@ -1,7 +1,7 @@
 <div align="center">
   <img src="docs/icon-animated.svg" alt="Maestro Logo" width="120">
 
-  <h1>Maestro 🚀</h1>
+  <h1>Maestro 🎼</h1>
   <p><em>Callable orchestrator — hires specialist agents on-chain, grades their work, delivers one vetted result</em></p>
   <img src="docs/readme-hero-animated.svg" alt="Maestro" width="100%">
 
@@ -23,7 +23,7 @@
 ## 📸 See it in Action
 
 <div align="center">
-  <img src="docs/readme.png" alt="Maestro Demo" width="100%">
+  <img src="docs/see-in-action.png" alt="Maestro Demo" width="100%">
 </div>
 
 > **The Orchestrator Workflow.** Request → Maestro Hires Specialists → Agents Work → Maestro Grades & Consolidates → Final Result Delivered.
