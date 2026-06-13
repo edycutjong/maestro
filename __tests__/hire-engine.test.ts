@@ -4,6 +4,7 @@ import { executePipeline } from '../src/hire-engine.js';
 import * as core from '@edycutjong/croo-core';
 import * as state from '../src/state.js';
 import type { PipelineStep } from '../src/planner.js';
+import { TraceContext } from '../src/trace.js';
 
 vi.mock('@edycutjong/croo-core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@edycutjong/croo-core')>();
@@ -17,10 +18,13 @@ vi.mock('../src/state.js', async (importOriginal) => {
 
 describe('Maestro Hire Engine', () => {
   const mockClient = { id: 'client-id' };
-  
+  let traceCtx: TraceContext;
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(state.loadState).mockResolvedValue(null);
+    traceCtx = new TraceContext('master_order');
+    vi.stubGlobal('setTimeout', (cb: any) => cb());
   });
 
   it('executes a pipeline sequentially and tracks budget', async () => {
@@ -33,7 +37,7 @@ describe('Maestro Hire Engine', () => {
       .mockResolvedValueOnce({ orderId: 'o1', amountPaid: '1.0', txHash: 'tx1', durationMs: 100, delivery: { res: 1 } } as any)
       .mockResolvedValueOnce({ orderId: 'o2', amountPaid: '0.5', txHash: 'tx2', durationMs: 100, delivery: { res: 2 } } as any);
 
-    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order');
+    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order', traceCtx);
 
     expect(core.hire).toHaveBeenCalledTimes(2);
     expect(result.totalSpent).toBe(1.5);
@@ -53,7 +57,7 @@ describe('Maestro Hire Engine', () => {
 
     vi.mocked(core.hire).mockResolvedValueOnce({ orderId: 'o1', amountPaid: '1.0', durationMs: 100, delivery: {} } as any);
 
-    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order');
+    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order', traceCtx);
 
     expect(core.hire).toHaveBeenCalledTimes(1);
     expect(result.audit).toHaveLength(1);
@@ -65,10 +69,9 @@ describe('Maestro Hire Engine', () => {
       { name: 'step2', agent: 'Agent2', serviceId: 'svc2', buildRequirement: () => ({}) },
     ];
 
-    // Costs 5.0, budget is 5.0
     vi.mocked(core.hire).mockResolvedValueOnce({ orderId: 'o1', amountPaid: '5.0', durationMs: 100, delivery: {} } as any);
 
-    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order');
+    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order', traceCtx);
 
     expect(core.hire).toHaveBeenCalledTimes(1);
     expect(result.audit).toHaveLength(1);
@@ -81,12 +84,12 @@ describe('Maestro Hire Engine', () => {
       { name: 'step2', agent: 'Agent2', serviceId: 'svc2', buildRequirement: () => ({}) },
     ];
 
-    vi.mocked(core.hire).mockRejectedValueOnce(new Error('Agent offline'));
+    vi.mocked(core.hire).mockRejectedValue(new Error('Agent offline'));
 
-    await expect(executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order'))
+    await expect(executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order', traceCtx))
       .rejects.toThrow('Critical step "research" failed');
 
-    expect(core.hire).toHaveBeenCalledTimes(1);
+    expect(core.hire).toHaveBeenCalledTimes(3); 
   });
 
   it('continues and records failed audit on non-critical step failure', async () => {
@@ -94,9 +97,9 @@ describe('Maestro Hire Engine', () => {
       { name: 'grade', agent: 'Agent1', serviceId: 'svc1', buildRequirement: () => ({}) },
     ];
 
-    vi.mocked(core.hire).mockRejectedValueOnce(new Error('Agent offline'));
+    vi.mocked(core.hire).mockRejectedValue(new Error('Agent offline'));
 
-    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order');
+    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order', traceCtx);
 
     expect(result.audit[0].status).toBe('failed');
     expect(state.saveState).toHaveBeenCalled();
@@ -121,9 +124,8 @@ describe('Maestro Hire Engine', () => {
 
     vi.mocked(core.hire).mockResolvedValueOnce({ orderId: 'o2', amountPaid: '0.5', durationMs: 100, delivery: { done: true } } as any);
 
-    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order');
+    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order', traceCtx);
 
-    // Should only hire step2
     expect(core.hire).toHaveBeenCalledTimes(1);
     expect(result.totalSpent).toBe(1.5);
     expect(result.audit).toHaveLength(2);
@@ -136,10 +138,9 @@ describe('Maestro Hire Engine', () => {
 
     vi.mocked(core.hire).mockResolvedValueOnce({ orderId: 'o1', amountPaid: '1.0', durationMs: 100, delivery: { score: 75 } } as any);
 
-    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order');
+    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order', traceCtx);
 
-    const traceModule = await import('../src/trace.js');
-    const log = traceModule.getTraceLog('master_order');
+    const log = traceCtx.getTraceLog();
     const gateCheck = log.find(e => e.type === 'gate_check');
     expect(gateCheck).toBeDefined();
     expect(gateCheck?.data).toMatchObject({ score: 75, threshold: 80, escalated: true });

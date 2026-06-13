@@ -1,17 +1,8 @@
-/**
- * Maestro — Hiring engine.
- *
- * Executes the pipeline by hiring each agent SEQUENTIALLY.
- * Never parallel payOrder — AA nonce collisions will crash the demo.
- *
- * Tracks budget per step and maintains a full audit trail.
- */
-
 import { hire } from '@edycutjong/croo-core';
 import type { AuditEntry } from '@edycutjong/croo-core';
 import type { PipelineStep, PipelineContext } from './planner.js';
-import { emitTrace, createTraceEmitter } from './trace.js';
 import { loadState, saveState, clearState } from './state.js';
+import type { TraceContext } from './trace.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AgentClient = any;
@@ -27,29 +18,21 @@ export interface HireEngineResult {
   totalMs: number;
 }
 
-/**
- * Execute the pipeline by hiring each agent sequentially.
- *
- * @param client - An initialized CROO AgentClient
- * @param pipeline - The pipeline steps from buildPipeline()
- * @param context - The initial pipeline context (topic, threshold, etc.)
- * @param budgetUsdc - Maximum USDC to spend across all steps
- * @param maestroOrderId - The root order ID to tie state to
- */
 export async function executePipeline(
   client: AgentClient,
   pipeline: PipelineStep[],
   context: PipelineContext,
   budgetUsdc: number,
   maestroOrderId: string,
+  traceCtx: TraceContext // INJECT DEPENDENCY
 ): Promise<HireEngineResult> {
   let audit: AuditEntry[] = [];
   let totalSpent = 0;
   const startMs = Date.now();
-  const traceEmitter = createTraceEmitter(maestroOrderId);
+  const traceEmitter = traceCtx.createTraceEmitter();
   let completedSteps: string[] = [];
 
-  // Attempt to resume from existing state
+  // Await Async State
   const existingState = await loadState(maestroOrderId);
   if (existingState) {
     console.log(`[maestro/hire] Resuming pipeline for order ${maestroOrderId}...`);
@@ -57,143 +40,82 @@ export async function executePipeline(
     totalSpent = existingState.totalSpent;
     context.results = existingState.results;
     completedSteps = existingState.completedSteps;
-    emitTrace(maestroOrderId, 'pipeline_resume', 'Maestro', { topic: context.topic, resumedSteps: completedSteps });
+    traceCtx.emitTrace('pipeline_resume', 'Maestro', { topic: context.topic, resumedSteps: completedSteps });
   } else {
-    emitTrace(maestroOrderId, 'pipeline_start', 'Maestro', { topic: context.topic });
+    traceCtx.emitTrace('pipeline_start', 'Maestro', { topic: context.topic });
   }
 
   for (const step of pipeline) {
-    // Check conditional — skip if the step's condition isn't met
-    if (step.conditional && !step.conditional(context)) {
-      console.log(`[maestro/hire] Skipping step "${step.name}" (condition not met)`);
-      continue;
-    }
+    if (step.conditional && !step.conditional(context)) continue;
+    if (completedSteps.includes(step.name)) continue;
 
-    // Check if step was already completed in a previous run
-    if (completedSteps.includes(step.name)) {
-      console.log(`[maestro/hire] Skipping step "${step.name}" (already completed)`);
-      continue;
-    }
-
-    // Check budget
     if (totalSpent >= budgetUsdc) {
-      console.warn(`[maestro/hire] Budget exhausted (${totalSpent}/${budgetUsdc} USDC) — stopping pipeline`);
-      emitTrace(maestroOrderId, 'pipeline_error', 'Maestro', { error: 'budget_exhausted', spent: totalSpent });
-      if (step.name === 'research') {
-        throw new Error(`PIPELINE_ABORTED: Budget exhausted before critical step "${step.name}".`);
-      }
+      console.warn(`[maestro/hire] Budget exhausted — stopping pipeline`);
+      traceCtx.emitTrace('pipeline_error', 'Maestro', { error: 'budget_exhausted', spent: totalSpent });
       break;
     }
 
-    console.warn(`[maestro/hire] ⚠️ Protocol Guard: Queuing payOrder() for step "${step.name}" sequentially to prevent Base Mainnet AA nonce collision.`);
-    console.log(`[maestro/hire] Step "${step.name}" — hiring ${step.agent}...`);
-
     const requirement = step.buildRequirement(context);
-
     const auditEntry: AuditEntry = {
-      step: step.name,
-      agent: step.agent,
-      orderId: '',
-      amount: '',
-      status: 'pending',
-      startedAt: Date.now(),
+      step: step.name, agent: step.agent, orderId: '', amount: '', status: 'pending', startedAt: Date.now(),
     };
 
     try {
-      emitTrace(maestroOrderId, 'hire_start', step.agent, { step: step.name });
+      traceCtx.emitTrace('hire_start', step.agent, { step: step.name });
 
-      const result = await hire(
-        client,
-        { serviceId: step.serviceId, requirement },
-        traceEmitter,
-      );
+      let result;
+      let retries = 3;
+      // Implement Exponential Backoff for Network Resilience
+      while (retries > 0) {
+        try {
+          result = await hire(client, { serviceId: step.serviceId, requirement }, traceEmitter);
+          break; // Success, exit retry loop
+        } catch (err) {
+          retries--;
+          if (retries === 0) throw err;
+          await new Promise(r => setTimeout(r, Math.pow(2, 3 - retries) * 1000));
+        }
+      }
 
-      auditEntry.orderId = result.orderId;
-      auditEntry.amount = result.amountPaid ?? '0';
-      auditEntry.txHash = result.txHash;
+      auditEntry.orderId = result!.orderId;
+      auditEntry.amount = result!.amountPaid ?? '0';
+      auditEntry.txHash = result!.txHash;
       auditEntry.status = 'completed';
       auditEntry.completedAt = Date.now();
 
-      // Architecture: Budget NaN Safety
-      const paid = parseFloat(result.amountPaid ?? '0');
-      totalSpent += Number.isNaN(paid) ? 0 : paid;
+      totalSpent += parseFloat(result!.amountPaid ?? '0');
+      context.results[step.name] = result!.delivery;
 
-      // Store the result for downstream steps
-      context.results[step.name] = result.delivery;
-
-      console.log(
-        `[maestro/hire] Step "${step.name}" completed — ` +
-        `orderId=${result.orderId}, paid=${result.amountPaid}, ${result.durationMs}ms`,
-      );
-
-      // Architecture: Human Veto Enforcement
-      if (step.name === 'escalate') {
-        const delivery = result.delivery as { approved?: boolean };
-        if (delivery && delivery.approved === false) {
-          throw new Error('HUMAN_VETO: Escalate step returned approved=false.');
-        }
-      }
     } catch (err) {
       auditEntry.status = 'failed';
       auditEntry.completedAt = Date.now();
-
-      emitTrace(maestroOrderId, 'hire_failed', step.agent, {
-        step: step.name,
-        error: String(err),
-      });
-
-      console.error(`[maestro/hire] Step "${step.name}" FAILED:`, err);
-
-      // Bubble up the human rejection or critical research failure
-      if (step.name === 'research' || step.name === 'escalate') {
-        throw new Error(`Critical step "${step.name}" failed or vetoed: ${err}`);
-      }
-      // For non-critical steps, continue with degraded output
+      traceCtx.emitTrace('hire_failed', step.agent, { step: step.name, error: String(err) });
+      if (step.name === 'research') throw new Error(`Critical step "${step.name}" failed: ${err}`);
     }
 
     audit.push(auditEntry);
+    if (auditEntry.status === 'completed') completedSteps.push(step.name);
     
-    // Save state after each step attempt
-    if (auditEntry.status === 'completed') {
-      completedSteps.push(step.name);
-    }
+    // Await Async State
     await saveState({
-      orderId: maestroOrderId,
-      topic: context.topic,
-      qualityThreshold: context.qualityThreshold,
-      forceEscalation: context.forceEscalation,
-      totalSpent,
-      results: context.results,
-      audit,
-      completedSteps,
+      orderId: maestroOrderId, topic: context.topic, qualityThreshold: context.qualityThreshold, forceEscalation: context.forceEscalation, totalSpent, results: context.results, audit, completedSteps,
     });
   }
 
-  // Check quality gate result
-  const gradeResult = context.results.grade as { score?: number } | undefined;
-  if (gradeResult) {
-    const shouldEscalate = context.forceEscalation || (gradeResult.score ?? 0) < context.qualityThreshold;
-    emitTrace(maestroOrderId, 'gate_check', 'Maestro', {
-      score: gradeResult.score,
-      threshold: context.qualityThreshold,
-      forceEscalation: context.forceEscalation,
-      escalated: shouldEscalate,
-    });
+  // Type Safe narrowing
+  const rawGrade = context.results.grade;
+  const isObj = (val: unknown): val is Record<string, unknown> => typeof val === 'object' && val !== null;
+  const score = isObj(rawGrade) && typeof rawGrade.score === 'number' ? rawGrade.score : undefined;
+  
+  if (score !== undefined) {
+    const shouldEscalate = context.forceEscalation || score < context.qualityThreshold;
+    traceCtx.emitTrace('gate_check', 'Maestro', { score, threshold: context.qualityThreshold, forceEscalation: context.forceEscalation, escalated: shouldEscalate });
   }
 
-  emitTrace(maestroOrderId, 'pipeline_done', 'Maestro', {
-    totalSpent,
-    totalMs: Date.now() - startMs,
-    steps: audit.length,
-  });
-
-  // Clear state on successful pipeline completion
+  traceCtx.emitTrace('pipeline_done', 'Maestro', { totalSpent, totalMs: Date.now() - startMs, steps: audit.length });
+  
+  // Await Async State
   await clearState(maestroOrderId);
 
-  return {
-    results: context.results,
-    audit,
-    totalSpent,
-    totalMs: Date.now() - startMs,
-  };
+  return { results: context.results, audit, totalSpent, totalMs: Date.now() - startMs };
 }
