@@ -46,10 +46,17 @@ export async function loadState(orderId: string): Promise<PipelineState | null> 
 
 export async function saveState(state: PipelineState): Promise<void> {
   await initDataDir();
+  const targetPath = getSafePath(state.orderId);
+  const tempPath = `${targetPath}.tmp.json`;
+  
   try {
-    await fs.writeFile(getSafePath(state.orderId), JSON.stringify(state, null, 2), 'utf8');
+    // ATOMIC WRITE: Write to temp file first, then swap atomically
+    await fs.writeFile(tempPath, JSON.stringify(state, null, 2), 'utf8');
+    await fs.rename(tempPath, targetPath);
   } catch (err) {
     console.error(`[maestro/state] Failed to save state for ${state.orderId}:`, err);
+    // Cleanup dangling temp file if possible
+    try { await fs.unlink(tempPath); } catch {}
   }
 }
 
