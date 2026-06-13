@@ -51,6 +51,9 @@ function isRecord(data: unknown): data is Record<string, unknown> {
 
 // ─── Provider ──────────────────────────────────────────────────────
 
+// IDEMPOTENCY GUARD: Track active orders to prevent double-spend from duplicate webhooks
+const activeOrders = new Set<string>();
+
 /**
  * Start the Maestro provider loop.
  */
@@ -70,10 +73,17 @@ export async function startMaestroProvider(
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     work: async (order: any): Promise<Deliverable<unknown>> => {
-      if (!isMaestroInput(order.requirement)) {
-         throw new Error('Invalid payload: Missing or malformed requirement object. Expected MaestroInput schema.');
+      if (activeOrders.has(order.id)) {
+        console.warn(`[maestro] Idempotency guard triggered: Order ${order.id} is already being processed.`);
+        throw new Error('Duplicate order execution rejected to prevent double-spend.');
       }
-      const input = order.requirement;
+      activeOrders.add(order.id);
+
+      try {
+        if (!isMaestroInput(order.requirement)) {
+           throw new Error('Invalid payload: Missing or malformed requirement object. Expected MaestroInput schema.');
+        }
+        const input = order.requirement;
 
       console.log(`[maestro] Order ${order.id}: orchestrating pipeline for "${input.topic}"`);
 
@@ -84,6 +94,7 @@ export async function startMaestroProvider(
         topic: input.topic,
         qualityThreshold: input.qualityThreshold ?? 80,
         forceEscalation: input.forceEscalation ?? false,
+        absoluteDeadline: Date.now() + 1_440_000, // SLA limit (24 minutes, gives 1m buffer)
         results: {},
       };
 
@@ -143,8 +154,12 @@ export async function startMaestroProvider(
       };
 
       return { type: 'schema', data: output };
+      } finally {
+        // Guarantee lock release even on failure
+        activeOrders.delete(order.id);
+      }
     },
 
-    slaGuardMs: 120_000, // 2 min guard (pipeline takes time)
+    slaGuardMs: 1_500_000, // Increase SLA to 25 minutes to accommodate human-in-the-loop (Summon)
   });
 }

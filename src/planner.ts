@@ -11,6 +11,7 @@ export interface PipelineContext {
   topic: string;
   qualityThreshold: number;
   forceEscalation: boolean;
+  absoluteDeadline: number;
   /** Accumulated results from previous steps. */
   results: Record<string, unknown>;
 }

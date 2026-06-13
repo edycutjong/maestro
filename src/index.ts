@@ -12,6 +12,7 @@
 
 import { makeClient, isMockMode } from '@edycutjong/croo-core';
 import { startMaestroProvider } from './provider.js';
+import { sweepStaleState } from './state.js';
 
 async function main() {
   console.log('╔══════════════════════════════════════════╗');
@@ -19,6 +20,10 @@ async function main() {
   console.log('║  Research → Grade → Human → Deliver      ║');
   console.log(`║  Mode: ${isMockMode() ? '🧪 MOCK' : '🔴 LIVE (Base Mainnet)'}              ║`);
   console.log('╚══════════════════════════════════════════╝');
+
+  // PREVENT DISK LEAKS: Sweep zombie state files from prior terminated processes
+  console.log('[maestro] Sweeping stale pipeline states...');
+  await sweepStaleState(86_400_000); // 24 hours
 
   const sdkKey = process.env.CROO_SDK_KEY;
   const serviceId = process.env.MAESTRO_SERVICE_ID;

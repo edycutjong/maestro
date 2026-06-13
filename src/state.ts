@@ -62,3 +62,26 @@ export async function clearState(orderId: string): Promise<void> {
     }
   }
 }
+
+export async function sweepStaleState(maxAgeMs: number = 86_400_000): Promise<void> {
+  await initDataDir();
+  try {
+    const files = await fs.readdir(DATA_DIR);
+    const now = Date.now();
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue;
+      const filePath = path.join(DATA_DIR, file);
+      try {
+        const stats = await fs.stat(filePath);
+        if (now - stats.mtimeMs > maxAgeMs) {
+          await fs.unlink(filePath);
+          console.log(`[maestro/state] Swept stale state file: ${file}`);
+        }
+      } catch {
+        // Ignore individual file stat/unlink errors
+      }
+    }
+  } catch (err) {
+    console.error('[maestro/state] Failed to sweep stale state directory:', err);
+  }
+}

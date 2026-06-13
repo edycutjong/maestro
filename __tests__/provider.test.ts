@@ -27,7 +27,7 @@ describe('Maestro Provider', () => {
     expect(core.runProvider).toHaveBeenCalledWith(
       mockClient,
       expect.objectContaining({
-        slaGuardMs: 120_000,
+        slaGuardMs: 1_500_000,
         serviceMatch: expect.any(Function),
         work: expect.any(Function),
       })

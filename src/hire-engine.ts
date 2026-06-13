@@ -49,6 +49,14 @@ export async function executePipeline(
     if (step.conditional && !step.conditional(context)) continue;
     if (completedSteps.includes(step.name)) continue;
 
+    // FINANCIAL GUARD: Do not hire if SLA is nearing expiration (60s buffer)
+    if (context.absoluteDeadline && Date.now() + 60_000 > context.absoluteDeadline) {
+      console.error(`[maestro/hire] 🛑 SLA critical limit reached for ${maestroOrderId}. Aborting outbound hires to prevent capital drain.`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      traceCtx.emitTrace('pipeline_warn' as any, 'Maestro', { warning: 'sla_limit_reached', step: step.name });
+      break; // Break the loop, salvage partial results, and compose what we have
+    }
+
     if (totalSpent >= budgetUsdc) {
       console.warn(`[maestro/hire] Budget exhausted — stopping pipeline`);
       traceCtx.emitTrace('pipeline_error', 'Maestro', { error: 'budget_exhausted', spent: totalSpent });
