@@ -76,7 +76,21 @@ export async function executePipeline(
       // Implement Exponential Backoff for Network Resilience
       while (retries > 0) {
         try {
-          result = await hire(client, { serviceId: step.serviceId, requirement }, traceEmitter);
+          // PROMISE TIMEOUT GUARD: Ensure we have enough time to finish the pipeline
+          const timeRemaining = context.absoluteDeadline ? context.absoluteDeadline - Date.now() - 45_000 : 300_000; // Default to 5m if undefined
+          if (timeRemaining <= 0) {
+            throw new Error('Insufficient SLA time remaining to hire sub-agent.');
+          }
+
+          const hirePromise = hire(client, { serviceId: step.serviceId, requirement }, traceEmitter);
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            const timer = setTimeout(() => reject(new Error(`Sub-agent execution timed out`)), timeRemaining);
+            // Ensure timer doesn't keep event loop alive unnecessarily
+            if (timer.unref) timer.unref(); 
+          });
+
+          // Race the actual hire against the SLA doom-timer
+          result = await Promise.race([hirePromise, timeoutPromise]);
           break; // Success, exit retry loop
         } catch (err) {
           retries--;
