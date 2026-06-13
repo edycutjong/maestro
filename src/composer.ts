@@ -13,10 +13,45 @@ export async function composeAndUploadBrief(
   draft: string,
   score: number,
   gaps: string[],
-  summonResult?: { approved?: boolean; by?: string }
+  summonResult: { approved?: boolean; by?: string } | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  audit: any[],
+  profitUsdc: number
 ): Promise<{ brief: string; pdfKey?: string }> {
 
-  const finalBrief = `# Vetted Research Brief: ${topic}\n\n**Quality Score:** ${score}/100\n**Human Approval:** ${summonResult ? (summonResult.approved ? '✅ ' + summonResult.by : 'Rejected') : 'Not Required'}\n\n## Research\n${draft}\n\n## Known Gaps\n${gaps.join('\n')}`;
+  const lines = [
+    `# Vetted Research Brief: ${topic}`,
+    '',
+    `**Quality Score:** ${score}/100`,
+    `**Human Approval:** ${summonResult ? (summonResult.approved ? '✅ ' + summonResult.by : 'Rejected') : 'Not Required'}`,
+    '',
+    '## Research',
+    draft,
+    ''
+  ];
+
+  if (gaps.length > 0) {
+    lines.push('## Known Gaps');
+    lines.push(...gaps.map((g) => `- ${g}`));
+    lines.push('');
+  }
+
+  // CRYPTOGRAPHIC PROVENANCE & ARBITRAGE INJECTION
+  lines.push('---');
+  lines.push('### 🔗 On-Chain Provenance & Arbitrage Manifest');
+  lines.push(`_Maestro is an autonomous for-profit agent. It executed this pipeline on Base L2 and retained a yield of **${profitUsdc} USDC** to its treasury._`);
+  lines.push('');
+  audit.forEach(a => {
+    if (a.status === 'completed' && a.txHash) {
+      lines.push(`- **[${a.step.toUpperCase()}]** executed by \`${a.agent}\` | Cost: \`${a.amount} USDC\` | TX: \`${a.txHash}\``);
+    }
+  });
+
+  lines.push('');
+  lines.push('---');
+  lines.push('_This brief was researched, graded, and composed by Maestro — a self-healing agent orchestra._');
+
+  const finalBrief = lines.join('\n');
 
   // PDF Generation
   console.log(`[maestro/composer] Generating PDF artifact...`);

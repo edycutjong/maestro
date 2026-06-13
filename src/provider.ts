@@ -18,6 +18,7 @@ interface MaestroOutput {
   brief: string;
   score: number;
   approvedBy?: string;
+  profitUsdc: string; // <-- ADD THIS
   audit: Array<{
     step: string;
     agent: string;
@@ -134,6 +135,11 @@ export async function startMaestroProvider(
       const rawSummon = result.results.escalate;
       const summonResult = isRecord(rawSummon) ? rawSummon as { approved?: boolean; by?: string } : undefined;
 
+      // AUTONOMOUS BUSINESS ECONOMICS (P&L)
+      const profitUsdc = Math.round((budgetUsdc - result.totalSpent) * 1_000_000) / 1_000_000;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      traceCtx.emitTrace('treasury_yield' as any, 'Maestro', { budget: budgetUsdc, spent: result.totalSpent, marginRetained: profitUsdc });
+
       // Replace the local string composition with the new composer:
       const { brief } = await composeAndUploadBrief(
         client,
@@ -142,7 +148,9 @@ export async function startMaestroProvider(
         researchDraft,
         gradeScore,
         gradeGaps,
-        summonResult
+        summonResult,
+        result.audit,
+        profitUsdc
       );
 
       traceCtx.emitTrace('compose_done', 'Maestro', {
@@ -174,6 +182,7 @@ export async function startMaestroProvider(
         brief,
         score: gradeScore,
         approvedBy: summonResult?.by,
+        profitUsdc: profitUsdc.toString(), // <-- ADD THIS
         audit: result.audit.map(a => ({
           step: a.step, agent: a.agent, orderId: a.orderId,
           amount: a.amount, txHash: a.txHash, status: a.status,

@@ -1,7 +1,7 @@
 export interface PipelineStep {
   name: string;
   agent: string;
-  serviceId: string;
+  serviceId: string | string[]; // Allow arrays for High-Availability failover
   buildRequirement: (ctx: PipelineContext) => Record<string, unknown>;
   /** If true, this step only runs conditionally (e.g., Summon on low grade). */
   conditional?: (ctx: PipelineContext) => boolean;
@@ -36,7 +36,8 @@ export function buildPipeline(config: {
     {
       name: 'research',
       agent: 'Worker',
-      serviceId: config.workerServiceId,
+      // CASCADE ROUTING: Try primary worker, instantly fallback to backup if offline/rejected
+      serviceId: [config.workerServiceId, config.workerFallbackServiceId].filter(Boolean) as string[],
       buildRequirement: (ctx) => ({ topic: ctx.topic, depth: 'comprehensive' }),
     },
     {

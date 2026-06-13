@@ -17,7 +17,7 @@ describe('Maestro Planner', () => {
     expect(pipeline[3].name).toBe('fallback_grade');
     expect(pipeline[4].name).toBe('escalate');
 
-    expect(pipeline[0].serviceId).toBe('svc_worker');
+    expect(pipeline[0].serviceId).toEqual(['svc_worker']);
     expect(pipeline[1].serviceId).toBe('svc_litmus');
     expect(pipeline[4].serviceId).toBe('svc_summon');
   });

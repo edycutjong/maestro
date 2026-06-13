@@ -71,39 +71,67 @@ export async function executePipeline(
     try {
       traceCtx.emitTrace('hire_start', step.agent, { step: step.name });
 
-      let result;
-      let retries = 3;
-      // Implement Exponential Backoff for Network Resilience
-      while (retries > 0) {
-        try {
-          // PROMISE TIMEOUT GUARD: Ensure we have enough time to finish the pipeline
-          const timeRemaining = context.absoluteDeadline ? context.absoluteDeadline - Date.now() - 45_000 : 300_000; // Default to 5m if undefined
-          if (timeRemaining <= 0) {
-            throw new Error('Insufficient SLA time remaining to hire sub-agent.');
-          }
+      const targetServiceIds = Array.isArray(step.serviceId) ? step.serviceId : [step.serviceId];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let result: any = null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let lastErr: any = null;
 
-          let timer: NodeJS.Timeout | undefined;
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error(`Sub-agent execution timed out`)), timeRemaining);
-            if (timer?.unref) timer.unref(); 
-          });
+      // SERVICE-MESH CASCADE ROUTER: Iterate through redundant providers
+      for (const currentSvcId of targetServiceIds) {
+        if (!currentSvcId) continue;
 
+        let retries = 3;
+        while (retries > 0 && !result) {
           try {
-            // Race the actual hire against the SLA doom-timer
-            result = await Promise.race([
-              hire(client, { serviceId: step.serviceId, requirement }, traceEmitter),
-              timeoutPromise
-            ]);
-          } finally {
-            // EVENT LOOP HYGIENE: Destroy the timer immediately so it doesn't leak memory if hire() wins
-            if (timer) clearTimeout(timer);
+            const timeRemaining = context.absoluteDeadline ? context.absoluteDeadline - Date.now() - 45_000 : 300_000;
+            if (timeRemaining <= 0) throw new Error('Insufficient SLA time remaining to hire sub-agent.');
+
+            let timer: NodeJS.Timeout | undefined;
+            const timeoutPromise = new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error(`Sub-agent execution timed out`)), timeRemaining);
+              if (timer?.unref) timer.unref(); 
+            });
+
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              traceCtx.emitTrace('hire_attempt' as any, step.agent, { target: currentSvcId, step: step.name });
+              result = await Promise.race([
+                hire(client, { serviceId: currentSvcId, requirement }, traceEmitter),
+                timeoutPromise
+              ]);
+            } finally {
+              if (timer) clearTimeout(timer);
+            }
+          } catch (err) {
+            lastErr = err;
+            retries--;
+            if (retries > 0) await new Promise(r => setTimeout(r, Math.pow(2, 3 - retries) * 1000));
           }
-          break; // Success, exit retry loop
-        } catch (err) {
-          retries--;
-          if (retries === 0) throw err;
-          await new Promise(r => setTimeout(r, Math.pow(2, 3 - retries) * 1000));
         }
+
+        if (result) {
+          if (currentSvcId !== targetServiceIds[0]) {
+             auditEntry.agent = `${step.agent} (Failover Node)`;
+             // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             traceCtx.emitTrace('failover_success' as any, step.agent, { backupServiceId: currentSvcId });
+          }
+          break; // Success! Exit the cascade mesh loop.
+        } else {
+          console.warn(`[maestro/hire] Provider ${currentSvcId} failed completely. Cascading to next backup in mesh...`);
+        }
+      }
+
+      if (!result) {
+        auditEntry.status = 'failed';
+        auditEntry.completedAt = Date.now();
+        traceCtx.emitTrace('hire_failed', step.agent, { step: step.name, error: String(lastErr) });
+        audit.push(auditEntry);
+        await saveState({
+          orderId: maestroOrderId, topic: context.topic, qualityThreshold: context.qualityThreshold, forceEscalation: context.forceEscalation, totalSpent, results: context.results, audit, completedSteps,
+        });
+        if (step.name === 'research') throw new Error(`Critical step "${step.name}" failed across all failover nodes: ${lastErr}`);
+        continue;
       }
 
       auditEntry.orderId = result!.orderId;
