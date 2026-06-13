@@ -14,6 +14,8 @@ export interface PipelineContext {
   absoluteDeadline: number;
   /** Accumulated results from previous steps. */
   results: Record<string, unknown>;
+  vendorIdUsed?: string;   // <-- 🛡️ ADD THIS: Tracks which agent produced the research
+  vendorCostUsed?: number; // <-- 🛡️ ADD THIS: Track capital spent on the specific vendor
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,13 +57,24 @@ export function buildPipeline(config: {
       serviceId: config.workerFallbackServiceId ?? '',
       conditional: (ctx) => {
         if (!config.workerFallbackServiceId) return false;
-        return getScore(ctx.results.grade) < ctx.qualityThreshold;
+        const gradeResult = ctx.results.grade as Record<string, unknown> | undefined;
+        const score = typeof gradeResult?.score === 'number' ? gradeResult.score : 100;
+        return score < ctx.qualityThreshold;
       },
-      buildRequirement: (ctx) => ({
-        topic: ctx.topic,
-        depth: 'comprehensive',
-        context: 'Fallback retry due to low quality initial draft.',
-      }),
+      buildRequirement: (ctx) => {
+        // 🧠 A2A COGNITIVE REFLECTION: Inject the Oracle's critique into the fallback prompt
+        const grade = ctx.results.grade as Record<string, unknown> | undefined;
+        const score = typeof grade?.score === 'number' ? grade.score : 0;
+        const gapsList = Array.isArray(grade?.gaps) && grade.gaps.length > 0 
+          ? grade.gaps.join(', ') 
+          : 'poor methodology and insufficient evidence';
+        
+        return {
+          topic: ctx.topic,
+          depth: 'comprehensive',
+          context: `CRITICAL FEEDBACK: Your previous draft failed the quality gate with a score of ${score}/100. You MUST self-correct and specifically resolve these gaps identified by the Litmus Quality Oracle: ${gapsList}`
+        };
+      },
     },
     {
       name: 'fallback_grade',

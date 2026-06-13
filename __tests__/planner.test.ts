@@ -108,7 +108,7 @@ describe('Maestro Planner', () => {
       topic: 'test_fallback', qualityThreshold: 80, forceEscalation: false, results: {}
     });
     expect(frReq.topic).toBe('test_fallback');
-    expect(frReq.context).toContain('Fallback retry');
+    expect(frReq.context).toContain('CRITICAL FEEDBACK');
 
     // fallback_grade conditional
     expect(fallbackGrade.conditional!({

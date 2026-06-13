@@ -5,6 +5,7 @@ import type { PipelineContext } from './planner.js';
 import { executePipeline } from './hire-engine.js';
 import { TraceContext } from './trace.js';
 import { composeAndUploadBrief } from './composer.js';
+import { recordTreasuryYield } from './treasury.js';
 
 // ─── Input / Output Types ──────────────────────────────────────────
 
@@ -19,6 +20,7 @@ interface MaestroOutput {
   score: number;
   approvedBy?: string;
   profitUsdc: string; // <-- ADD THIS
+  estimatedValuationUsdc: string; // <-- ADD THIS
   audit: Array<{
     step: string;
     agent: string;
@@ -136,9 +138,14 @@ export async function startMaestroProvider(
       const summonResult = isRecord(rawSummon) ? rawSummon as { approved?: boolean; by?: string } : undefined;
 
       // AUTONOMOUS BUSINESS ECONOMICS (P&L)
-      const profitUsdc = Math.round((budgetUsdc - result.totalSpent) * 1_000_000) / 1_000_000;
+      const profitUsdcRaw = budgetUsdc - result.totalSpent;
+      const profitUsdc = Math.round(profitUsdcRaw * 1_000_000) / 1_000_000;
+      
+      // 🧠 ASSETIZATION: Calculate Live Enterprise Valuation
+      const { lifetimeYield, valuation } = await recordTreasuryYield(profitUsdc);
+      
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      traceCtx.emitTrace('treasury_yield' as any, 'Maestro', { budget: budgetUsdc, spent: result.totalSpent, marginRetained: profitUsdc });
+      traceCtx.emitTrace('treasury_yield' as any, 'Maestro', { budget: budgetUsdc, spent: result.totalSpent, marginRetained: profitUsdc, valuation });
 
       // Replace the local string composition with the new composer:
       const { brief } = await composeAndUploadBrief(
@@ -150,7 +157,9 @@ export async function startMaestroProvider(
         gradeGaps,
         summonResult,
         result.audit,
-        profitUsdc
+        profitUsdc,
+        lifetimeYield,
+        valuation
       );
 
       traceCtx.emitTrace('compose_done', 'Maestro', {
@@ -183,6 +192,7 @@ export async function startMaestroProvider(
         score: gradeScore,
         approvedBy: summonResult?.by,
         profitUsdc: profitUsdc.toString(), // <-- ADD THIS
+        estimatedValuationUsdc: valuation.toString(), // <-- ADD THIS
         audit: result.audit.map(a => ({
           step: a.step, agent: a.agent, orderId: a.orderId,
           amount: a.amount, txHash: a.txHash, status: a.status,

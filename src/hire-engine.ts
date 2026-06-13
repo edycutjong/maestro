@@ -3,6 +3,7 @@ import type { AuditEntry } from '@edycutjong/croo-core';
 import type { PipelineStep, PipelineContext } from './planner.js';
 import { loadState, saveState, clearState } from './state.js';
 import type { TraceContext } from './trace.js';
+import { updateReputation, sortProvidersByEfficiency } from './reputation.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AgentClient = any;
@@ -71,11 +72,16 @@ export async function executePipeline(
     try {
       traceCtx.emitTrace('hire_start', step.agent, { step: step.name });
 
-      const targetServiceIds = Array.isArray(step.serviceId) ? step.serviceId : [step.serviceId];
+      const rawTargetIds = Array.isArray(step.serviceId) ? step.serviceId : [step.serviceId];
+      
+      // 🧠 FREE-MARKET OPTIMIZER: Rank vendors by capital efficiency (YQR)
+      const targetServiceIds = await sortProvidersByEfficiency(rawTargetIds);
+      
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let result: any = null;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let lastErr: any = null;
+      let successfulSvcId: string | null = null;
 
       // SERVICE-MESH CASCADE ROUTER: Iterate through redundant providers
       for (const currentSvcId of targetServiceIds) {
@@ -111,6 +117,7 @@ export async function executePipeline(
         }
 
         if (result) {
+          successfulSvcId = currentSvcId;
           if (currentSvcId !== targetServiceIds[0]) {
              auditEntry.agent = `${step.agent} (Failover Node)`;
              // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,6 +126,8 @@ export async function executePipeline(
           break; // Success! Exit the cascade mesh loop.
         } else {
           console.warn(`[maestro/hire] Provider ${currentSvcId} failed completely. Cascading to next backup in mesh...`);
+          // 🛡️ IMMUNE SYSTEM: Record network/SLA failure
+          await updateReputation(currentSvcId, null, true);
         }
       }
 
@@ -149,6 +158,12 @@ export async function executePipeline(
 
       auditEntry.amount = paidFloat.toString();
 
+      // Track the vendor and capital efficiency for the research step
+      if (step.name === 'research' || step.name === 'fallback_research') {
+        context.vendorIdUsed = successfulSvcId!;
+        context.vendorCostUsed = paidFloat;
+      }
+
       // USDC PRECISION: Clamp to 6 decimals to prevent IEEE-754 float drift
       totalSpent = Math.round((totalSpent + paidFloat) * 1_000_000) / 1_000_000;
       context.results[step.name] = result!.delivery;
@@ -175,6 +190,17 @@ export async function executePipeline(
   const score = isObj(rawGrade) && typeof rawGrade.score === 'number' ? rawGrade.score : undefined;
   
   if (score !== undefined) {
+    // 🧠 QUALITY & COST ORACLE: Update ledger with Score AND Cost
+    if (context.vendorIdUsed) {
+      await updateReputation(context.vendorIdUsed, score, false, context.vendorCostUsed);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      traceCtx.emitTrace('vendor_rated' as any, 'Maestro', { 
+        vendor: context.vendorIdUsed, 
+        score, 
+        cost: context.vendorCostUsed 
+      });
+    }
+
     const shouldEscalate = context.forceEscalation || score < context.qualityThreshold;
     traceCtx.emitTrace('gate_check', 'Maestro', { score, threshold: context.qualityThreshold, forceEscalation: context.forceEscalation, escalated: shouldEscalate });
   }
