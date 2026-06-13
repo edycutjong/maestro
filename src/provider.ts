@@ -133,6 +133,24 @@ export async function startMaestroProvider(
         
       const gradeScore = isRecord(finalGrade) && typeof finalGrade.score === 'number' ? finalGrade.score : 0;
       const gradeGaps = isRecord(finalGrade) && Array.isArray(finalGrade.gaps) ? (finalGrade.gaps as string[]) : [];
+
+      // --- NEW: THE FIDUCIARY ESCALATION PATH ---
+      const CRITICAL_SCORE_THRESHOLD = 40;
+      console.log(`[maestro] Quality Gate received Litmus Score: ${gradeScore}/100`);
+
+      if (gradeScore < CRITICAL_SCORE_THRESHOLD && !input.forceEscalation) {
+        console.error(`[maestro] 🚨 INTEGRITY FAULT: Draft quality (${gradeScore}) is below critical threshold.`);
+        console.error(`[maestro] 🚨 Aborting pipeline to protect human buyer. Initiating CAPVault Escrow Refund.`);
+
+        // Throwing this error allows the croo-core runProvider wrapper to catch it 
+        // and autonomously fire client.rejectOrder(order.id, String(err))
+        throw new Error(
+          `Fiduciary Refund Triggered: Subcontractor delivered a severely substandard payload ` +
+          `(Litmus Score: ${gradeScore}/100). Maestro has autonomously halted the pipeline ` +
+          `and refunded your USDC escrow to protect your capital.`
+        );
+      }
+
       
       const rawSummon = result.results.escalate;
       const summonResult = isRecord(rawSummon) ? rawSummon as { approved?: boolean; by?: string } : undefined;

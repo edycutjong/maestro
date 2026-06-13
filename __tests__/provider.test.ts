@@ -126,4 +126,23 @@ describe('Maestro Provider', () => {
     
     expect((result.data as any).brief).toContain('Rejected');
   });
+
+  it('triggers fiduciary escrow refund if score is below CRITICAL_SCORE_THRESHOLD (40)', async () => {
+    const mockClient = { id: 'client-id', uploadFile: vi.fn().mockResolvedValue('mock-pdf-key') };
+    await startMaestroProvider(mockClient as any, 'maestro-service');
+    const config = vi.mocked(core.runProvider).mock.calls[0][1];
+
+    vi.mocked(hireEngine.executePipeline).mockResolvedValueOnce({
+      results: {
+        research: { draft: 'Terrible hallucinated draft' },
+        grade: { score: 25, gaps: ['Completely fabricated metrics'] },
+      },
+      audit: [],
+      totalSpent: 1.0,
+      totalMs: 100,
+    });
+
+    await expect(config.work({ id: 'o_master_refund', requirement: { topic: 'Testing' }, amount: '2.0' } as any))
+      .rejects.toThrow('Fiduciary Refund Triggered');
+  });
 });
