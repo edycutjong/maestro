@@ -73,6 +73,17 @@ async function main() {
   process.on('SIGINT', () => { shutdown().catch(console.error); });
   process.on('SIGTERM', () => { shutdown().catch(console.error); });
 
+  // RELIABILITY GUARD: Catch fatal Node.js errors and route them through the graceful drain
+  process.on('uncaughtException', (err) => {
+    console.error('[maestro] 🚨 Uncaught Exception detected. Initiating emergency drain...', err);
+    shutdown().catch(() => process.exit(1));
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    console.error('[maestro] 🚨 Unhandled Promise Rejection detected. Initiating emergency drain...', reason);
+    shutdown().catch(() => process.exit(1));
+  });
+
   console.log('[maestro] Ready — waiting for orchestration orders...');
 }
 
