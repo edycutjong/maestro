@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maestro — Constellation Orchestrator</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --text: #f8fafc;
+      --accent: #06b6d4;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --border: #334155;
+    }
+    body {
+      margin: 0;
+      padding: 2rem;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    h1 {
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      color: #94a3b8;
+      margin-bottom: 2rem;
+    }
+    .graph-container {
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+      margin-bottom: 3rem;
+      padding: 2rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+    .node {
+      min-width: 150px;
+      padding: 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      text-align: center;
+      position: relative;
+    }
+    .node.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 15px rgba(6, 182, 212, 0.3);
+    }
+    .node.success {
+      border-color: var(--success);
+    }
+    .node-title {
+      font-weight: bold;
+      margin-bottom: 0.5rem;
+    }
+    .node-status {
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+    .arrow {
+      color: var(--border);
+      font-size: 1.5rem;
+    }
+    .trace-log {
+      background: var(--panel);
+      padding: 1rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      height: 300px;
+      overflow-y: auto;
+      font-size: 0.9rem;
+    }
+    .trace-entry {
+      margin-bottom: 0.5rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px dashed var(--border);
+    }
+    .trace-time { color: #64748b; }
+    .trace-agent { color: var(--accent); font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Maestro Orchestrator</h1>
+  <div class="subtitle">Live CROO Agent Constellation Trace</div>
+
+  <div class="graph-container" id="graph">
+    <!-- Stubbed nodes -->
+    <div class="node active">
+      <div class="node-title">Maestro</div>
+      <div class="node-status">Orchestrating...</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="node">
+      <div class="node-title">Worker</div>
+      <div class="node-status">Pending</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="node">
+      <div class="node-title">Litmus</div>
+      <div class="node-status">Pending</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="node">
+      <div class="node-title">Summon</div>
+      <div class="node-status">Conditional</div>
+    </div>
+  </div>
+
+  <h2>Trace Log</h2>
+  <div class="trace-log" id="trace">
+    <div class="trace-entry">
+      <span class="trace-time">[00:00:00]</span> 
+      <span class="trace-agent">Maestro</span>: pipeline_start { topic: "ZKP" }
+    </div>
+  </div>
+
+  <script>
+    // In the real demo, this will fetch from Maestro's /trace endpoint
+    console.log("Maestro UI Stub Loaded. Ready for WebSocket trace stream integration.");
+  </script>
+</body>
+</html>

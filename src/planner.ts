@@ -30,6 +30,7 @@ export interface PipelineContext {
  */
 export function buildPipeline(config: {
   workerServiceId: string;
+  workerFallbackServiceId?: string;
   litmusServiceId: string;
   summonServiceId: string;
 }): PipelineStep[] {
@@ -56,20 +57,50 @@ export function buildPipeline(config: {
       }),
     },
 
-    // Step 3: Escalate (conditional — only if grade is low or forceEscalation)
+    // Step 3: Fallback Research (conditional — only if grade is low and fallback configured)
+    {
+      name: 'fallback_research',
+      agent: 'FallbackWorker',
+      serviceId: config.workerFallbackServiceId ?? '',
+      conditional: (ctx) => {
+        if (!config.workerFallbackServiceId) return false;
+        const gradeResult = ctx.results.grade as { score?: number } | undefined;
+        return (gradeResult?.score ?? 100) < ctx.qualityThreshold;
+      },
+      buildRequirement: (ctx) => ({
+        topic: ctx.topic,
+        depth: 'comprehensive',
+        context: 'Fallback retry due to low quality initial draft.',
+      }),
+    },
+
+    // Step 4: Fallback Grade (conditional — only if fallback research ran)
+    {
+      name: 'fallback_grade',
+      agent: 'Litmus',
+      serviceId: config.litmusServiceId,
+      conditional: (ctx) => !!ctx.results.fallback_research,
+      buildRequirement: (ctx) => ({
+        deliverable: (ctx.results.fallback_research as { draft?: string })?.draft ?? '',
+        context: `Grading fallback research brief on: ${ctx.topic}`,
+      }),
+    },
+
+    // Step 5: Escalate (conditional — only if final grade is low or forceEscalation)
     {
       name: 'escalate',
       agent: 'Summon',
       serviceId: config.summonServiceId,
       conditional: (ctx) => {
         if (ctx.forceEscalation) return true;
-        const gradeResult = ctx.results.grade as { score?: number } | undefined;
-        return (gradeResult?.score ?? 100) < ctx.qualityThreshold;
+        // Check fallback grade if it exists, otherwise original grade
+        const finalGrade = (ctx.results.fallback_grade || ctx.results.grade) as { score?: number } | undefined;
+        return (finalGrade?.score ?? 100) < ctx.qualityThreshold;
       },
       buildRequirement: (ctx) => {
-        const gradeResult = ctx.results.grade as { score?: number; gaps?: string[] } | undefined;
+        const finalGrade = (ctx.results.fallback_grade || ctx.results.grade) as { score?: number; gaps?: string[] } | undefined;
         return {
-          prompt: `Research brief on "${ctx.topic}" scored ${gradeResult?.score ?? '??'}/100.\n\nGaps: ${gradeResult?.gaps?.join(', ') ?? 'none listed'}\n\nShould this brief be shipped to the client?`,
+          prompt: `Research brief on "${ctx.topic}" scored ${finalGrade?.score ?? '??'}/100.\n\nGaps: ${finalGrade?.gaps?.join(', ') ?? 'none listed'}\n\nShould this brief be shipped to the client?`,
           context: `Maestro orchestration — quality gate escalation`,
         };
       },

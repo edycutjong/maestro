@@ -5,7 +5,7 @@
  * Next.js UI reads to render the live node-graph.
  */
 
-import type { TraceEvent, TraceEventType } from 'croo-core';
+import type { TraceEvent, TraceEventType } from '@edycutjong/croo-core';
 
 /** In-memory trace log for the current run. */
 const traceLog: TraceEvent[] = [];

@@ -7,10 +7,11 @@
  * Tracks budget per step and maintains a full audit trail.
  */
 
-import { hire } from 'croo-core';
-import type { AuditEntry } from 'croo-core';
+import { hire } from '@edycutjong/croo-core';
+import type { AuditEntry } from '@edycutjong/croo-core';
 import type { PipelineStep, PipelineContext } from './planner.js';
 import { emitTrace, createTraceEmitter } from './trace.js';
+import { loadState, saveState, clearState } from './state.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AgentClient = any;
@@ -33,24 +34,44 @@ export interface HireEngineResult {
  * @param pipeline - The pipeline steps from buildPipeline()
  * @param context - The initial pipeline context (topic, threshold, etc.)
  * @param budgetUsdc - Maximum USDC to spend across all steps
+ * @param maestroOrderId - The root order ID to tie state to
  */
 export async function executePipeline(
   client: AgentClient,
   pipeline: PipelineStep[],
   context: PipelineContext,
   budgetUsdc: number,
+  maestroOrderId: string,
 ): Promise<HireEngineResult> {
-  const audit: AuditEntry[] = [];
+  let audit: AuditEntry[] = [];
   let totalSpent = 0;
   const startMs = Date.now();
   const traceEmitter = createTraceEmitter();
+  let completedSteps: string[] = [];
 
-  emitTrace('pipeline_start', 'Maestro', { topic: context.topic });
+  // Attempt to resume from existing state
+  const existingState = loadState(maestroOrderId);
+  if (existingState) {
+    console.log(`[maestro/hire] Resuming pipeline for order ${maestroOrderId}...`);
+    audit = existingState.audit;
+    totalSpent = existingState.totalSpent;
+    context.results = existingState.results;
+    completedSteps = existingState.completedSteps;
+    emitTrace('pipeline_resume', 'Maestro', { topic: context.topic, resumedSteps: completedSteps });
+  } else {
+    emitTrace('pipeline_start', 'Maestro', { topic: context.topic });
+  }
 
   for (const step of pipeline) {
     // Check conditional — skip if the step's condition isn't met
     if (step.conditional && !step.conditional(context)) {
       console.log(`[maestro/hire] Skipping step "${step.name}" (condition not met)`);
+      continue;
+    }
+
+    // Check if step was already completed in a previous run
+    if (completedSteps.includes(step.name)) {
+      console.log(`[maestro/hire] Skipping step "${step.name}" (already completed)`);
       continue;
     }
 
@@ -61,6 +82,7 @@ export async function executePipeline(
       break;
     }
 
+    console.warn(`[maestro/hire] ⚠️ Protocol Guard: Queuing payOrder() for step "${step.name}" sequentially to prevent Base Mainnet AA nonce collision.`);
     console.log(`[maestro/hire] Step "${step.name}" — hiring ${step.agent}...`);
 
     const requirement = step.buildRequirement(context);
@@ -117,6 +139,21 @@ export async function executePipeline(
     }
 
     audit.push(auditEntry);
+    
+    // Save state after each step attempt
+    if (auditEntry.status === 'completed') {
+      completedSteps.push(step.name);
+    }
+    saveState({
+      orderId: maestroOrderId,
+      topic: context.topic,
+      qualityThreshold: context.qualityThreshold,
+      forceEscalation: context.forceEscalation,
+      totalSpent,
+      results: context.results,
+      audit,
+      completedSteps,
+    });
   }
 
   // Check quality gate result
@@ -136,6 +173,9 @@ export async function executePipeline(
     totalMs: Date.now() - startMs,
     steps: audit.length,
   });
+
+  // Clear state on successful pipeline completion
+  clearState(maestroOrderId);
 
   return {
     results: context.results,

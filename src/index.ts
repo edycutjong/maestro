@@ -10,7 +10,7 @@
  * - CROO_MOCK=true — offline mock mode
  */
 
-import { makeClient, isMockMode } from 'croo-core';
+import { makeClient, isMockMode } from '@edycutjong/croo-core';
 import { startMaestroProvider } from './provider.js';
 
 async function main() {
@@ -38,8 +38,8 @@ async function main() {
 
   const shutdown = () => {
     console.log('\n[maestro] Shutting down...');
-    if (stream && typeof stream.close === 'function') {
-      stream.close();
+    if (stream && typeof (stream as { close?: () => void }).close === 'function') {
+      (stream as { close: () => void }).close();
     }
     process.exit(0);
   };

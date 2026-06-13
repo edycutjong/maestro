@@ -6,12 +6,12 @@
  * the final vetted brief.
  */
 
-import { runProvider } from 'croo-core';
-import type { Order, Deliverable, NegotiationEvent } from 'croo-core';
+import { runProvider } from '@edycutjong/croo-core';
+import type { Deliverable } from '@edycutjong/croo-core';
 import { buildPipeline } from './planner.js';
 import type { PipelineContext } from './planner.js';
 import { executePipeline } from './hire-engine.js';
-import { emitTrace, clearTraceLog, getTraceLog } from './trace.js';
+import { emitTrace, clearTraceLog } from './trace.js';
 
 // ─── Input / Output Types ──────────────────────────────────────────
 
@@ -41,6 +41,7 @@ interface MaestroOutput {
 function getServiceIds() {
   return {
     workerServiceId: process.env.WORKER_SERVICE_ID ?? 'svc_research_worker',
+    workerFallbackServiceId: process.env.WORKER_FALLBACK_SERVICE_ID ?? 'svc_fallback_worker',
     litmusServiceId: process.env.LITMUS_SERVICE_ID ?? 'svc_litmus_grader',
     summonServiceId: process.env.SUMMON_SERVICE_ID ?? 'svc_summon_human',
   };
@@ -55,17 +56,19 @@ export async function startMaestroProvider(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   client: any,
   serviceId: string,
-) {
+): Promise<unknown> {
   const serviceIds = getServiceIds();
   const pipeline = buildPipeline(serviceIds);
 
-  return runProvider<MaestroInput, MaestroOutput>(client, {
-    serviceMatch: (event: NegotiationEvent) => {
+  return runProvider<unknown>(client, {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    serviceMatch: (event: any) => {
       return event.service_id === serviceId;
     },
 
-    work: async (order: Order<MaestroInput>): Promise<Deliverable<MaestroOutput>> => {
-      const input = order.requirement;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    work: async (order: any): Promise<Deliverable<unknown>> => {
+      const input = order.requirement as unknown as MaestroInput;
       if (!input?.topic) {
         throw new Error('Missing required field: topic');
       }
@@ -87,11 +90,14 @@ export async function startMaestroProvider(
       const budgetUsdc = parseFloat(order.amount ?? '2.0');
 
       // Execute the pipeline (sequential hires)
-      const result = await executePipeline(client, pipeline, context, budgetUsdc);
+      const result = await executePipeline(client, pipeline, context, budgetUsdc, order.id);
 
-      // Compose the final brief
-      const researchDraft = (result.results.research as { draft?: string })?.draft ?? 'No research available';
-      const gradeResult = result.results.grade as { score?: number; gaps?: string[] } | undefined;
+      // Compose the final brief using fallback results if they exist
+      const finalResearch = result.results.fallback_research || result.results.research;
+      const finalGrade = result.results.fallback_grade || result.results.grade;
+      
+      const researchDraft = (finalResearch as { draft?: string })?.draft ?? 'No research available';
+      const gradeResult = finalGrade as { score?: number; gaps?: string[] } | undefined;
       const summonResult = result.results.escalate as { approved?: boolean; by?: string } | undefined;
 
       const brief = composeBrief(
