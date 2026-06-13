@@ -46,20 +46,20 @@ export async function executePipeline(
   let audit: AuditEntry[] = [];
   let totalSpent = 0;
   const startMs = Date.now();
-  const traceEmitter = createTraceEmitter();
+  const traceEmitter = createTraceEmitter(maestroOrderId);
   let completedSteps: string[] = [];
 
   // Attempt to resume from existing state
-  const existingState = loadState(maestroOrderId);
+  const existingState = await loadState(maestroOrderId);
   if (existingState) {
     console.log(`[maestro/hire] Resuming pipeline for order ${maestroOrderId}...`);
     audit = existingState.audit;
     totalSpent = existingState.totalSpent;
     context.results = existingState.results;
     completedSteps = existingState.completedSteps;
-    emitTrace('pipeline_resume', 'Maestro', { topic: context.topic, resumedSteps: completedSteps });
+    emitTrace(maestroOrderId, 'pipeline_resume', 'Maestro', { topic: context.topic, resumedSteps: completedSteps });
   } else {
-    emitTrace('pipeline_start', 'Maestro', { topic: context.topic });
+    emitTrace(maestroOrderId, 'pipeline_start', 'Maestro', { topic: context.topic });
   }
 
   for (const step of pipeline) {
@@ -78,7 +78,10 @@ export async function executePipeline(
     // Check budget
     if (totalSpent >= budgetUsdc) {
       console.warn(`[maestro/hire] Budget exhausted (${totalSpent}/${budgetUsdc} USDC) — stopping pipeline`);
-      emitTrace('pipeline_error', 'Maestro', { error: 'budget_exhausted', spent: totalSpent });
+      emitTrace(maestroOrderId, 'pipeline_error', 'Maestro', { error: 'budget_exhausted', spent: totalSpent });
+      if (step.name === 'research') {
+        throw new Error(`PIPELINE_ABORTED: Budget exhausted before critical step "${step.name}".`);
+      }
       break;
     }
 
@@ -97,7 +100,7 @@ export async function executePipeline(
     };
 
     try {
-      emitTrace('hire_start', step.agent, { step: step.name });
+      emitTrace(maestroOrderId, 'hire_start', step.agent, { step: step.name });
 
       const result = await hire(
         client,
@@ -111,7 +114,9 @@ export async function executePipeline(
       auditEntry.status = 'completed';
       auditEntry.completedAt = Date.now();
 
-      totalSpent += parseFloat(result.amountPaid ?? '0');
+      // Architecture: Budget NaN Safety
+      const paid = parseFloat(result.amountPaid ?? '0');
+      totalSpent += Number.isNaN(paid) ? 0 : paid;
 
       // Store the result for downstream steps
       context.results[step.name] = result.delivery;
@@ -120,20 +125,28 @@ export async function executePipeline(
         `[maestro/hire] Step "${step.name}" completed — ` +
         `orderId=${result.orderId}, paid=${result.amountPaid}, ${result.durationMs}ms`,
       );
+
+      // Architecture: Human Veto Enforcement
+      if (step.name === 'escalate') {
+        const delivery = result.delivery as { approved?: boolean };
+        if (delivery && delivery.approved === false) {
+          throw new Error('HUMAN_VETO: Escalate step returned approved=false.');
+        }
+      }
     } catch (err) {
       auditEntry.status = 'failed';
       auditEntry.completedAt = Date.now();
 
-      emitTrace('hire_failed', step.agent, {
+      emitTrace(maestroOrderId, 'hire_failed', step.agent, {
         step: step.name,
         error: String(err),
       });
 
       console.error(`[maestro/hire] Step "${step.name}" FAILED:`, err);
 
-      // For research step failure, abort the whole pipeline
-      if (step.name === 'research') {
-        throw new Error(`Critical step "${step.name}" failed: ${err}`);
+      // Bubble up the human rejection or critical research failure
+      if (step.name === 'research' || step.name === 'escalate') {
+        throw new Error(`Critical step "${step.name}" failed or vetoed: ${err}`);
       }
       // For non-critical steps, continue with degraded output
     }
@@ -144,7 +157,7 @@ export async function executePipeline(
     if (auditEntry.status === 'completed') {
       completedSteps.push(step.name);
     }
-    saveState({
+    await saveState({
       orderId: maestroOrderId,
       topic: context.topic,
       qualityThreshold: context.qualityThreshold,
@@ -159,8 +172,8 @@ export async function executePipeline(
   // Check quality gate result
   const gradeResult = context.results.grade as { score?: number } | undefined;
   if (gradeResult) {
-    const shouldEscalate = context.forceEscalation || (gradeResult.score ?? 100) < context.qualityThreshold;
-    emitTrace('gate_check', 'Maestro', {
+    const shouldEscalate = context.forceEscalation || (gradeResult.score ?? 0) < context.qualityThreshold;
+    emitTrace(maestroOrderId, 'gate_check', 'Maestro', {
       score: gradeResult.score,
       threshold: context.qualityThreshold,
       forceEscalation: context.forceEscalation,
@@ -168,14 +181,14 @@ export async function executePipeline(
     });
   }
 
-  emitTrace('pipeline_done', 'Maestro', {
+  emitTrace(maestroOrderId, 'pipeline_done', 'Maestro', {
     totalSpent,
     totalMs: Date.now() - startMs,
     steps: audit.length,
   });
 
   // Clear state on successful pipeline completion
-  clearState(maestroOrderId);
+  await clearState(maestroOrderId);
 
   return {
     results: context.results,

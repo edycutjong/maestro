@@ -21,7 +21,7 @@ describe('Maestro Provider', () => {
   });
 
   it('registers the provider with the correct service ID', async () => {
-    const mockClient = { id: 'client-id' };
+    const mockClient = { id: 'client-id', uploadFile: vi.fn().mockResolvedValue('mock-pdf-key') };
     await startMaestroProvider(mockClient as any, 'maestro-service');
     
     expect(core.runProvider).toHaveBeenCalledWith(
@@ -41,7 +41,7 @@ describe('Maestro Provider', () => {
   });
 
   it('throws an error if topic is missing from requirement', async () => {
-    const mockClient = { id: 'client-id' };
+    const mockClient = { id: 'client-id', uploadFile: vi.fn().mockResolvedValue('mock-pdf-key') };
     await startMaestroProvider(mockClient as any, 'maestro-service');
     const config = vi.mocked(core.runProvider).mock.calls[0][1];
 
@@ -50,7 +50,7 @@ describe('Maestro Provider', () => {
   });
 
   it('executes pipeline and composes final brief', async () => {
-    const mockClient = { id: 'client-id' };
+    const mockClient = { id: 'client-id', uploadFile: vi.fn().mockResolvedValue('mock-pdf-key') };
     await startMaestroProvider(mockClient as any, 'maestro-service');
     const config = vi.mocked(core.runProvider).mock.calls[0][1];
 
@@ -84,7 +84,7 @@ describe('Maestro Provider', () => {
   });
 
   it('includes gaps and human approval in the brief if present', async () => {
-    const mockClient = { id: 'client-id' };
+    const mockClient = { id: 'client-id', uploadFile: vi.fn().mockResolvedValue('mock-pdf-key') };
     await startMaestroProvider(mockClient as any, 'maestro-service');
     const config = vi.mocked(core.runProvider).mock.calls[0][1];
 
@@ -106,7 +106,7 @@ describe('Maestro Provider', () => {
   });
 
   it('indicates below threshold in the brief if score < 80 and no human approval', async () => {
-    const mockClient = { id: 'client-id' };
+    const mockClient = { id: 'client-id', uploadFile: vi.fn().mockResolvedValue('mock-pdf-key') };
     await startMaestroProvider(mockClient as any, 'maestro-service');
     const config = vi.mocked(core.runProvider).mock.calls[0][1];
 
@@ -123,6 +123,6 @@ describe('Maestro Provider', () => {
 
     const result = await config.work({ id: 'o_master2', requirement: { topic: 'Testing' }, amount: '2.0' } as any);
     
-    expect((result.data as any).brief).toContain('⚠️ Below threshold, no human approval obtained');
+    expect((result.data as any).brief).toContain('Rejected');
   });
 });

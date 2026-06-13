@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
+import fsPromises from 'fs/promises';
 import path from 'path';
 import { loadState, saveState, clearState, initDataDir } from '../src/state.js';
 import type { PipelineState } from '../src/state.js';
@@ -20,17 +21,17 @@ describe('Maestro State', () => {
     }
   });
 
-  it('initDataDir creates the data directory if missing', () => {
-    initDataDir();
+  it('initDataDir creates the data directory if missing', async () => {
+    await initDataDir();
     expect(fs.existsSync(path.join(process.cwd(), 'data'))).toBe(true);
   });
 
-  it('loadState returns null if no state exists', () => {
-    const state = loadState(TEST_ORDER);
+  it('loadState returns null if no state exists', async () => {
+    const state = await loadState(TEST_ORDER);
     expect(state).toBeNull();
   });
 
-  it('saveState persists state to disk and loadState reads it', () => {
+  it('saveState persists state to disk and loadState reads it', async () => {
     const mockState: PipelineState = {
       orderId: TEST_ORDER,
       topic: 'test',
@@ -42,68 +43,62 @@ describe('Maestro State', () => {
       completedSteps: ['research'],
     };
 
-    saveState(mockState);
+    await saveState(mockState);
     
     expect(fs.existsSync(statePath)).toBe(true);
 
-    const loaded = loadState(TEST_ORDER);
+    const loaded = await loadState(TEST_ORDER);
     expect(loaded).toEqual(mockState);
   });
 
-  it('clearState removes the state file', () => {
-    saveState({ orderId: TEST_ORDER } as PipelineState);
+  it('clearState removes the state file', async () => {
+    await saveState({ orderId: TEST_ORDER } as PipelineState);
     expect(fs.existsSync(statePath)).toBe(true);
     
-    clearState(TEST_ORDER);
-    clearState(TEST_ORDER);
+    await clearState(TEST_ORDER);
+    await clearState(TEST_ORDER);
     expect(fs.existsSync(statePath)).toBe(false);
   });
 
-  it('handles readFileSync throwing an error gracefully', () => {
+  it('handles readFile throwing an error gracefully', async () => {
     const mockState: PipelineState = { orderId: 'err_test' } as PipelineState;
-    saveState(mockState);
+    await saveState(mockState);
     
     // Setup mock
-    const readMock = vi.spyOn(fs, 'readFileSync').mockImplementationOnce(() => {
-      throw new Error('Read error');
-    });
+    const readMock = vi.spyOn(fsPromises, 'readFile').mockRejectedValueOnce(new Error('Read error'));
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const loaded = loadState('err_test');
+    const loaded = await loadState('err_test');
     expect(loaded).toBeNull();
     expect(errorLog).toHaveBeenCalled();
 
     readMock.mockRestore();
     errorLog.mockRestore();
-    clearState('err_test');
+    await clearState('err_test');
   });
 
-  it('handles writeFileSync throwing an error gracefully', () => {
-    const writeMock = vi.spyOn(fs, 'writeFileSync').mockImplementationOnce(() => {
-      throw new Error('Write error');
-    });
+  it('handles writeFile throwing an error gracefully', async () => {
+    const writeMock = vi.spyOn(fsPromises, 'writeFile').mockRejectedValueOnce(new Error('Write error'));
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    saveState({ orderId: 'write_err_test' } as PipelineState);
+    await saveState({ orderId: 'write_err_test' } as PipelineState);
     expect(errorLog).toHaveBeenCalled();
 
     writeMock.mockRestore();
     errorLog.mockRestore();
   });
 
-  it('handles unlinkSync throwing an error gracefully', () => {
-    saveState({ orderId: 'unlink_err_test' } as PipelineState);
+  it('handles unlink throwing an error gracefully', async () => {
+    await saveState({ orderId: 'unlink_err_test' } as PipelineState);
     
-    const unlinkMock = vi.spyOn(fs, 'unlinkSync').mockImplementationOnce(() => {
-      throw new Error('Unlink error');
-    });
+    const unlinkMock = vi.spyOn(fsPromises, 'unlink').mockRejectedValueOnce(new Error('Unlink error'));
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    clearState('unlink_err_test');
+    await clearState('unlink_err_test');
     expect(errorLog).toHaveBeenCalled();
 
     unlinkMock.mockRestore();
     errorLog.mockRestore();
-    clearState('unlink_err_test'); // actual cleanup
+    await clearState('unlink_err_test'); // actual cleanup
   });
 });

@@ -1,4 +1,5 @@
-import fs from 'fs';
+import fsSync from 'fs';
+import { promises as fs } from 'fs';
 import path from 'path';
 import type { AuditEntry } from '@edycutjong/croo-core';
 
@@ -15,20 +16,20 @@ export interface PipelineState {
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 
-export function initDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+export async function initDataDir(): Promise<void> {
+  if (!fsSync.existsSync(DATA_DIR)) {
+    await fs.mkdir(DATA_DIR, { recursive: true });
   }
 }
 
-export function loadState(orderId: string): PipelineState | null {
-  initDataDir();
+export async function loadState(orderId: string): Promise<PipelineState | null> {
+  await initDataDir();
   const statePath = path.join(DATA_DIR, `${orderId}.json`);
-  if (!fs.existsSync(statePath)) {
+  if (!fsSync.existsSync(statePath)) {
     return null;
   }
   try {
-    const raw = fs.readFileSync(statePath, 'utf8');
+    const raw = await fs.readFile(statePath, 'utf8');
     return JSON.parse(raw) as PipelineState;
   } catch (err) {
     console.error(`[maestro/state] Failed to load state for ${orderId}:`, err);
@@ -36,21 +37,21 @@ export function loadState(orderId: string): PipelineState | null {
   }
 }
 
-export function saveState(state: PipelineState): void {
-  initDataDir();
+export async function saveState(state: PipelineState): Promise<void> {
+  await initDataDir();
   const statePath = path.join(DATA_DIR, `${state.orderId}.json`);
   try {
-    fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf8');
+    await fs.writeFile(statePath, JSON.stringify(state, null, 2), 'utf8');
   } catch (err) {
     console.error(`[maestro/state] Failed to save state for ${state.orderId}:`, err);
   }
 }
 
-export function clearState(orderId: string): void {
+export async function clearState(orderId: string): Promise<void> {
   const statePath = path.join(DATA_DIR, `${orderId}.json`);
-  if (fs.existsSync(statePath)) {
+  if (fsSync.existsSync(statePath)) {
     try {
-      fs.unlinkSync(statePath);
+      await fs.unlink(statePath);
     } catch (err) {
       console.error(`[maestro/state] Failed to clear state for ${orderId}:`, err);
     }

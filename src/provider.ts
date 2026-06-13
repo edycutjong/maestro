@@ -12,6 +12,7 @@ import { buildPipeline } from './planner.js';
 import type { PipelineContext } from './planner.js';
 import { executePipeline } from './hire-engine.js';
 import { emitTrace, clearTraceLog } from './trace.js';
+import { composeAndUploadBrief } from './composer.js';
 
 // ─── Input / Output Types ──────────────────────────────────────────
 
@@ -76,7 +77,7 @@ export async function startMaestroProvider(
       console.log(`[maestro] Order ${order.id}: orchestrating pipeline for "${input.topic}"`);
 
       // Clear trace log for this run
-      clearTraceLog();
+      clearTraceLog(order.id);
 
       // Build pipeline context
       const context: PipelineContext = {
@@ -86,8 +87,9 @@ export async function startMaestroProvider(
         results: {},
       };
 
-      // Parse budget from escrow amount
-      const budgetUsdc = parseFloat(order.amount ?? '2.0');
+      // Security: Prevent NaN budget bypasses
+      let budgetUsdc = parseFloat(order.amount ?? '2.0');
+      if (Number.isNaN(budgetUsdc)) budgetUsdc = 2.0;
 
       // Execute the pipeline (sequential hires)
       const result = await executePipeline(client, pipeline, context, budgetUsdc, order.id);
@@ -95,39 +97,40 @@ export async function startMaestroProvider(
       // Compose the final brief using fallback results if they exist
       const finalResearch = result.results.fallback_research || result.results.research;
       const finalGrade = result.results.fallback_grade || result.results.grade;
+      const researchDraft = (finalResearch as { draft?: string })?.draft;
       
-      const researchDraft = (finalResearch as { draft?: string })?.draft ?? 'No research available';
+      // Architecture: Strict Refund Enforcement
+      if (!researchDraft || researchDraft.trim() === '') {
+        throw new Error('PIPELINE_ABORTED: Critical research step failed. Escrow will be refunded.');
+      }
+      
       const gradeResult = finalGrade as { score?: number; gaps?: string[] } | undefined;
       const summonResult = result.results.escalate as { approved?: boolean; by?: string } | undefined;
 
-      const brief = composeBrief(
+      // Replace the local string composition with the new composer:
+      const { brief, pdfKey } = await composeAndUploadBrief(
+        client,
+        order.id,
         input.topic,
         researchDraft,
         gradeResult?.score ?? 0,
         gradeResult?.gaps ?? [],
-        summonResult,
+        summonResult
       );
 
-      emitTrace('compose_done', 'Maestro', {
+      emitTrace(order.id, 'compose_done', 'Maestro', {
         briefLength: brief.length,
         score: gradeResult?.score,
         approved: summonResult?.approved,
       });
 
-      // TODO: pdfkit → uploadFile (Phase P4)
-      const pdfKey = undefined;
-
       const output: MaestroOutput = {
         brief,
         score: gradeResult?.score ?? 0,
         approvedBy: summonResult?.by,
-        audit: result.audit.map((a) => ({
-          step: a.step,
-          agent: a.agent,
-          orderId: a.orderId,
-          amount: a.amount,
-          txHash: a.txHash,
-          status: a.status,
+        audit: result.audit.map(a => ({
+          step: a.step, agent: a.agent, orderId: a.orderId,
+          amount: a.amount, txHash: a.txHash, status: a.status,
         })),
         pdfKey,
       };
@@ -139,43 +142,7 @@ export async function startMaestroProvider(
   });
 }
 
-// ─── Brief Composition ─────────────────────────────────────────────
 
-function composeBrief(
-  topic: string,
-  draft: string,
-  score: number,
-  gaps: string[],
-  summonResult?: { approved?: boolean; by?: string },
-): string {
-  const lines = [
-    `# Vetted Research Brief: ${topic}`,
-    '',
-    `**Quality Score:** ${score}/100`,
-    summonResult?.approved
-      ? `**Human Approved:** ✅ by ${summonResult.by}`
-      : score >= 80
-        ? '**Quality Gate:** ✅ Passed (score ≥ threshold)'
-        : '**Quality Gate:** ⚠️ Below threshold, no human approval obtained',
-    '',
-    '---',
-    '',
-    '## Research',
-    draft,
-    '',
-  ];
-
-  if (gaps.length > 0) {
-    lines.push('## Known Gaps');
-    lines.push(...gaps.map((g) => `- ${g}`));
-    lines.push('');
-  }
-
-  lines.push('---');
-  lines.push('_This brief was researched, graded, and composed by Maestro — an agent orchestra._');
-
-  return lines.join('\n');
-}
 
 /**
  * Get the trace log for the current/last run (for the UI).

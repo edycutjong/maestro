@@ -20,7 +20,7 @@ describe('Maestro Hire Engine', () => {
   
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(state.loadState).mockReturnValue(null);
+    vi.mocked(state.loadState).mockResolvedValue(null);
   });
 
   it('executes a pipeline sequentially and tracks budget', async () => {
@@ -108,7 +108,7 @@ describe('Maestro Hire Engine', () => {
       { name: 'step2', agent: 'Agent2', serviceId: 'svc2', buildRequirement: () => ({}) },
     ];
 
-    vi.mocked(state.loadState).mockReturnValue({
+    vi.mocked(state.loadState).mockResolvedValue({
       orderId: 'master_order',
       topic: 'test',
       qualityThreshold: 80,
@@ -139,7 +139,7 @@ describe('Maestro Hire Engine', () => {
     const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order');
 
     const traceModule = await import('../src/trace.js');
-    const log = traceModule.getTraceLog();
+    const log = traceModule.getTraceLog('master_order');
     const gateCheck = log.find(e => e.type === 'gate_check');
     expect(gateCheck).toBeDefined();
     expect(gateCheck?.data).toMatchObject({ score: 75, threshold: 80, escalated: true });

@@ -65,7 +65,8 @@ export function buildPipeline(config: {
       conditional: (ctx) => {
         if (!config.workerFallbackServiceId) return false;
         const gradeResult = ctx.results.grade as { score?: number } | undefined;
-        return (gradeResult?.score ?? 100) < ctx.qualityThreshold;
+        // Architecture: Default to 0 to FORCE retry if grading failed
+        return (gradeResult?.score ?? 0) < ctx.qualityThreshold;
       },
       buildRequirement: (ctx) => ({
         topic: ctx.topic,
@@ -95,7 +96,8 @@ export function buildPipeline(config: {
         if (ctx.forceEscalation) return true;
         // Check fallback grade if it exists, otherwise original grade
         const finalGrade = (ctx.results.fallback_grade || ctx.results.grade) as { score?: number } | undefined;
-        return (finalGrade?.score ?? 100) < ctx.qualityThreshold;
+        // Architecture: Default to 0 to FORCE human review if grading failed
+        return (finalGrade?.score ?? 0) < ctx.qualityThreshold;
       },
       buildRequirement: (ctx) => {
         const finalGrade = (ctx.results.fallback_grade || ctx.results.grade) as { score?: number; gaps?: string[] } | undefined;
