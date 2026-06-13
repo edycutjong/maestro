@@ -11,7 +11,7 @@
  */
 
 import { makeClient, isMockMode } from '@edycutjong/croo-core';
-import { startMaestroProvider } from './provider.js';
+import { startMaestroProvider, getActiveOrderCount } from './provider.js';
 import { sweepStaleState } from './state.js';
 
 async function main() {
@@ -41,16 +41,37 @@ async function main() {
   const client = isMockMode() ? {} : makeClient(sdkKey!);
   const stream = await startMaestroProvider(client, serviceId);
 
-  const shutdown = () => {
-    console.log('\n[maestro] Shutting down...');
+  let isShuttingDown = false;
+  const shutdown = async () => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    
+    console.log('\n[maestro] Caught termination signal. Halting inbound connections...');
     if (stream && typeof (stream as { close?: () => void }).close === 'function') {
       (stream as { close: () => void }).close();
     }
-    process.exit(0);
+
+    console.log(`[maestro] Draining ${getActiveOrderCount()} in-flight orders...`);
+    const maxWaitMs = Date.now() + 45_000; // 45s hard ceiling for eviction
+    
+    while (getActiveOrderCount() > 0 && Date.now() < maxWaitMs) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    if (getActiveOrderCount() > 0) {
+      console.error(`[maestro] ⚠️ Force quitting with ${getActiveOrderCount()} stranded orders.`);
+      process.exit(1);
+    } else {
+      console.log('[maestro] Clean shutdown complete. Zero stranded orders.');
+      process.exit(0);
+    }
   };
 
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  // Safely bind async shutdown to process events
+  process.removeAllListeners('SIGINT');
+  process.removeAllListeners('SIGTERM');
+  process.on('SIGINT', () => { shutdown().catch(console.error); });
+  process.on('SIGTERM', () => { shutdown().catch(console.error); });
 
   console.log('[maestro] Ready — waiting for orchestration orders...');
 }
