@@ -55,12 +55,17 @@ function isRecord(data: unknown): data is Record<string, unknown> {
 const activeOrders = new Set<string>();
 export const getActiveOrderCount = (): number => activeOrders.size;
 
+export interface CrooAgentClient {
+  uploadFile?: (fileName: string, body: Buffer | string | Blob) => Promise<string>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any; 
+}
+
 /**
  * Start the Maestro provider loop.
  */
 export async function startMaestroProvider(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  client: any,
+  client: CrooAgentClient,
   serviceId: string,
 ): Promise<unknown> {
   const serviceIds = getServiceIds();
@@ -130,7 +135,7 @@ export async function startMaestroProvider(
       const summonResult = isRecord(rawSummon) ? rawSummon as { approved?: boolean; by?: string } : undefined;
 
       // Replace the local string composition with the new composer:
-      const { brief, pdfKey } = await composeAndUploadBrief(
+      const { brief } = await composeAndUploadBrief(
         client,
         order.id,
         input.topic,
@@ -146,6 +151,25 @@ export async function startMaestroProvider(
         approved: summonResult?.approved,
       });
 
+      // FINAL MILE: Attempt to upload the brief as a verifiable asset via the CROO File Storage SDK
+      let pdfKey: string | undefined = undefined;
+      try {
+        if (typeof client.uploadFile === 'function') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          traceCtx.emitTrace('upload_start' as any, 'Maestro');
+          const fileBuffer = Buffer.from(brief, 'utf8'); 
+          const fileName = `vetted_brief_${order.id}.txt`; 
+          pdfKey = await client.uploadFile(fileName, fileBuffer);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          traceCtx.emitTrace('upload_done' as any, 'Maestro', { pdfKey });
+        }
+      } catch (err) {
+        // GRACEFUL DEGRADATION: Do not crash the 25-minute pipeline just because file storage hiccupped
+        console.warn(`[maestro] ⚠️ Non-critical failure: Could not upload file for ${order.id}. Degrading to text-only delivery.`, err);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        traceCtx.emitTrace('upload_error' as any, 'Maestro', { error: String(err) });
+      }
+
       const output: MaestroOutput = {
         brief,
         score: gradeScore,
@@ -154,7 +178,7 @@ export async function startMaestroProvider(
           step: a.step, agent: a.agent, orderId: a.orderId,
           amount: a.amount, txHash: a.txHash, status: a.status,
         })),
-        pdfKey,
+        pdfKey, // Dynamically populated or gracefully undefined
       };
 
       return { type: 'schema', data: output };
