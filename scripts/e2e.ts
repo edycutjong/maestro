@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 import { makeClient, hire } from '@edycutjong/croo-core';
-import { startMaestroProvider, getTraceLog } from '../src/provider.js';
+import { startMaestroProvider } from '../src/provider.js';
 
 async function run() {
   console.log('🚀 Starting CROO Constellation E2E Mock Test\n');
@@ -38,9 +38,9 @@ async function run() {
   console.log((result.delivery as any).brief);
   console.log('==================================================\n');
 
-  console.log('🔍 Maestro Trace Log:');
-  const traceLog = getTraceLog();
-  traceLog.forEach(t => console.log(`  [${new Date(t.timestamp).toISOString()}] ${t.event} (${t.agent})`));
+  console.log('🔍 Maestro Audit Trail:');
+  const audit = (result.delivery as any).audit || [];
+  audit.forEach((a: any) => console.log(`  [${new Date(a.completedAt || a.startedAt).toISOString()}] ${a.step} (${a.agent}) - ${a.status}`));
 
   console.log('\n[e2e] Test complete. Exiting.');
   process.exit(0);

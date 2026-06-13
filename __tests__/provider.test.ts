@@ -46,7 +46,7 @@ describe('Maestro Provider', () => {
     const config = vi.mocked(core.runProvider).mock.calls[0][1];
 
     await expect(config.work({ id: 'o1', requirement: {} } as any))
-      .rejects.toThrow('Missing required field: topic');
+      .rejects.toThrow('Invalid payload: Missing or malformed requirement object. Expected MaestroInput schema.');
   });
 
   it('executes pipeline and composes final brief', async () => {
@@ -73,7 +73,8 @@ describe('Maestro Provider', () => {
       expect.any(Array),
       expect.objectContaining({ topic: 'Testing', qualityThreshold: 80 }),
       2.0,
-      'o_master'
+      'o_master',
+      expect.any(Object)
     );
     
     expect(result.type).toBe('schema');
