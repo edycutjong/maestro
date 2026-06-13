@@ -53,6 +53,7 @@ function isRecord(data: unknown): data is Record<string, unknown> {
 
 // IDEMPOTENCY GUARD: Track active orders to prevent double-spend from duplicate webhooks
 const activeOrders = new Set<string>();
+export const getActiveOrderCount = (): number => activeOrders.size;
 
 /**
  * Start the Maestro provider loop.
@@ -98,9 +99,12 @@ export async function startMaestroProvider(
         results: {},
       };
 
-      // Security: Prevent NaN budget bypasses
-      let budgetUsdc = parseFloat(order.amount ?? '2.0');
-      if (Number.isNaN(budgetUsdc)) budgetUsdc = 2.0;
+      // STRICT FINANCIAL GUARD: Prevent NaN bypass exploit
+      const rawAmount = order.amount ?? '2.0';
+      const budgetUsdc = parseFloat(rawAmount);
+      if (Number.isNaN(budgetUsdc) || budgetUsdc <= 0) {
+        throw new Error(`[maestro/security] Invalid order amount. Expected positive numeric string, got: ${rawAmount}`);
+      }
 
       // Execute the pipeline (sequential hires)
       const result = await executePipeline(client, pipeline, context, budgetUsdc, order.id, traceCtx);
