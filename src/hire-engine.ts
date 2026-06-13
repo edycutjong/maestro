@@ -82,15 +82,22 @@ export async function executePipeline(
             throw new Error('Insufficient SLA time remaining to hire sub-agent.');
           }
 
-          const hirePromise = hire(client, { serviceId: step.serviceId, requirement }, traceEmitter);
+          let timer: NodeJS.Timeout | undefined;
           const timeoutPromise = new Promise<never>((_, reject) => {
-            const timer = setTimeout(() => reject(new Error(`Sub-agent execution timed out`)), timeRemaining);
-            // Ensure timer doesn't keep event loop alive unnecessarily
-            if (timer.unref) timer.unref(); 
+            timer = setTimeout(() => reject(new Error(`Sub-agent execution timed out`)), timeRemaining);
+            if (timer?.unref) timer.unref(); 
           });
 
-          // Race the actual hire against the SLA doom-timer
-          result = await Promise.race([hirePromise, timeoutPromise]);
+          try {
+            // Race the actual hire against the SLA doom-timer
+            result = await Promise.race([
+              hire(client, { serviceId: step.serviceId, requirement }, traceEmitter),
+              timeoutPromise
+            ]);
+          } finally {
+            // EVENT LOOP HYGIENE: Destroy the timer immediately so it doesn't leak memory if hire() wins
+            if (timer) clearTimeout(timer);
+          }
           break; // Success, exit retry loop
         } catch (err) {
           retries--;
@@ -100,12 +107,22 @@ export async function executePipeline(
       }
 
       auditEntry.orderId = result!.orderId;
-      auditEntry.amount = result!.amountPaid ?? '0';
       auditEntry.txHash = result!.txHash;
       auditEntry.status = 'completed';
       auditEntry.completedAt = Date.now();
 
-      totalSpent += parseFloat(result!.amountPaid ?? '0');
+      // ZERO-TRUST FINANCIAL GUARD: Validate sub-agent reported cost
+      const rawPaid = result!.amountPaid ?? '0';
+      const paidFloat = parseFloat(rawPaid);
+
+      if (Number.isNaN(paidFloat) || paidFloat < 0) {
+        throw new Error(`[maestro/security] Sub-agent returned invalid amountPaid: ${rawPaid}`);
+      }
+
+      auditEntry.amount = paidFloat.toString();
+
+      // USDC PRECISION: Clamp to 6 decimals to prevent IEEE-754 float drift
+      totalSpent = Math.round((totalSpent + paidFloat) * 1_000_000) / 1_000_000;
       context.results[step.name] = result!.delivery;
 
     } catch (err) {
