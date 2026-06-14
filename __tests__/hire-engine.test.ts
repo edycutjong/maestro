@@ -232,4 +232,25 @@ describe('Maestro Hire Engine', () => {
     await executePipeline(mockClient as any, pipeline, ctx, 10.0, 'bad_amount_order', traceCtx);
     expect(emitSpy).toHaveBeenCalledWith('hire_failed', 'Agent', expect.objectContaining({ error: expect.stringContaining('invalid amountPaid') }));
   });
+
+  it('triggers insufficient SLA time remaining branch during execution', async () => {
+    const pipeline = [
+      {
+        name: 'step1',
+        agent: 'Agent',
+        serviceId: 'svc',
+        buildRequirement: (ctx: any) => {
+          // Mutate absoluteDeadline after passing the outer check
+          ctx.absoluteDeadline = Date.now() + 10000;
+          return {};
+        },
+      }
+    ] as PipelineStep[];
+
+    const ctx = { topic: 'test', qualityThreshold: 80, forceEscalation: false, absoluteDeadline: Date.now() + 100000, results: {} };
+    const emitSpy = vi.spyOn(traceCtx, 'emitTrace');
+
+    await executePipeline(mockClient as any, pipeline, ctx, 10.0, 'sla_insufficient_order', traceCtx);
+    expect(emitSpy).toHaveBeenCalledWith('hire_failed', 'Agent', expect.objectContaining({ error: expect.stringContaining('Insufficient SLA time remaining') }));
+  });
 });

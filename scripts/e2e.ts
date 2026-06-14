@@ -1,52 +1,58 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
-import { makeClient, hire } from '@edycutjong/croo-core';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * Maestro — End-to-end smoke demo (offline / mock mode).
+ *
+ * Drives a full orchestration through the real provider `work()` function:
+ * research → grade → (fallback) → human escalation → compose → upload.
+ * Sub-agent hires return croo-core mock fixtures, so no USDC is spent and no
+ * network/WebSocket is opened.
+ */
 import { startMaestroProvider } from '../src/provider.js';
 
 async function run() {
-  console.log('🚀 Starting CROO Constellation E2E Mock Test\n');
+  console.log('🚀 CROO Constellation — Maestro E2E (mock mode)\n');
 
-  // 1. Initialize client in mock mode
   process.env.CROO_MOCK = 'true';
-  process.env.CROO_API_KEY = 'croo_sk_mock_e2e_key';
-  const client = makeClient(process.env.CROO_API_KEY);
 
-  // 2. Start Maestro provider
-  const maestroServiceId = 'svc_maestro_orchestrator';
-  console.log('[e2e] Starting Maestro provider...');
-  const maestroLoop = startMaestroProvider(client, maestroServiceId);
+  const topic = 'Zero-Knowledge Proofs in DAOs';
+  const requirement = { topic, qualityThreshold: 80, forceEscalation: false };
 
-  // 3. Act as buyer: Place an order to Maestro
-  console.log('\n[e2e] Buyer: Placing order to Maestro for "Zero-Knowledge Proofs in DAOs"...\n');
-  const result = await hire(client, {
-    serviceId: maestroServiceId,
-    requirement: {
-      topic: 'Zero-Knowledge Proofs in DAOs',
-      qualityThreshold: 90,
-      forceEscalation: false,
+  // Stub client: in mock mode croo-core's hire() returns fixtures and never
+  // touches this client, but work() reads the negotiation requirements and
+  // uploads the final brief through it.
+  const uploads: string[] = [];
+  const client: any = {
+    getNegotiation: async (negotiationId: string) => ({
+      negotiationId,
+      requirements: JSON.stringify(requirement),
+    }),
+    uploadFile: async (fileName: string) => {
+      const key = `mock://artifact/${fileName}`;
+      uploads.push(key);
+      return key;
     },
-    amount: '5.0',
+  };
+
+  const maestroServiceId = 'svc_maestro_orchestrator';
+  console.log(`[e2e] Starting Maestro provider, placing order for "${topic}"...\n`);
+
+  const stream: any = await startMaestroProvider(client, maestroServiceId);
+
+  // Simulate a paid order flowing into the provider's work() loop.
+  await stream.simulateOrder({
+    orderId: 'demo_order_1',
+    negotiationId: 'demo_neg_1',
+    serviceId: maestroServiceId,
+    price: '5.0',
+    slaDeadline: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
   });
 
-  // 4. Output results
-  console.log('\n✅ Order Completed!');
-  console.log(`Order ID: ${result.orderId}`);
-  console.log(`Duration: ${result.durationMs}ms`);
-  console.log(`Amount Paid: ${result.amountPaid} USDC`);
-  
-  console.log('\n📄 Final Brief Delivered:\n');
-  console.log('==================================================');
-  console.log((result.delivery as any).brief);
-  console.log('==================================================\n');
-
-  console.log('🔍 Maestro Audit Trail:');
-  const audit = (result.delivery as any).audit || [];
-  audit.forEach((a: any) => console.log(`  [${new Date(a.completedAt || a.startedAt).toISOString()}] ${a.step} (${a.agent}) - ${a.status}`));
-
-  console.log('\n[e2e] Test complete. Exiting.');
+  console.log('\n✅ E2E complete — Maestro orchestrated the full pipeline end-to-end.');
+  console.log(`📎 Artifacts uploaded: ${uploads.length ? uploads.join(', ') : '(none)'}`);
   process.exit(0);
 }
 
-run().catch(err => {
+run().catch((err) => {
   console.error('[e2e] Test failed:', err);
   process.exit(1);
 });

@@ -157,5 +157,62 @@ describe('Maestro Planner', () => {
       results: { grade: { score: 50 } } // Even if low grade, no fallback configured
     })).toBe(false);
   });
+
+  it('safely handles missing or malformed results in getDraft and getScore', () => {
+    const pipeline = buildPipeline({
+      workerServiceId: 'svc_worker',
+      workerFallbackServiceId: 'svc_fallback_worker',
+      litmusServiceId: 'svc_litmus',
+      summonServiceId: 'svc_summon',
+    });
+
+    const fallbackResearch = pipeline[2];
+    const escalateStep = pipeline[4];
+
+    // Missing grade entirely -> defaults to 100, skips fallback
+    expect(fallbackResearch.conditional!({
+      topic: 'test', qualityThreshold: 80, forceEscalation: false,
+      results: {}
+    })).toBe(false);
+
+    // Malformed grade without gaps
+    const frReq = fallbackResearch.buildRequirement({
+      topic: 'test', qualityThreshold: 80, forceEscalation: false,
+      results: { grade: { score: 40 } } // no gaps
+    });
+    expect(frReq.context).toContain('poor methodology and insufficient evidence');
+
+    // Missing grade for escalate -> defaults to 100, gaps default to 'none listed'
+    const escReq = escalateStep.buildRequirement({
+      topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {}
+    });
+    expect(escReq.prompt).toContain('scored 100/100');
+    expect(escReq.prompt).toContain('none listed');
+  });
+
+  it('handles malformed context results gracefully in buildRequirement', () => {
+    const pipeline = buildPipeline({
+      workerServiceId: 'svc_worker',
+      litmusServiceId: 'svc_litmus',
+      summonServiceId: 'svc_summon',
+    });
+
+    const ctx: PipelineContext = {
+      topic: 'Test',
+      qualityThreshold: 80,
+      forceEscalation: false,
+      absoluteDeadline: 0,
+      results: {
+        research: null,
+        grade: { gaps: 'not an array' },
+      }
+    };
+
+    const gradeReq = pipeline[1].buildRequirement(ctx) as Record<string, unknown>;
+    expect(gradeReq.deliverable).toBe(''); // hits line 23 fallback
+
+    const fallbackResReq = pipeline[2].buildRequirement(ctx) as Record<string, unknown>;
+    expect(fallbackResReq.context).toContain('poor methodology and insufficient evidence'); // hits line 66 fallback
+  });
 });
 

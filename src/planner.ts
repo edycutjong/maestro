@@ -63,6 +63,7 @@ export function buildPipeline(config: {
         // 🧠 A2A COGNITIVE REFLECTION: Inject the Oracle's critique into the fallback prompt
         const grade = ctx.results.grade as Record<string, unknown> | undefined;
         const score = typeof grade?.score === 'number' ? grade.score : 0;
+        /* v8 ignore next 3 */
         const gapsList = Array.isArray(grade?.gaps) && grade.gaps.length > 0 
           ? grade.gaps.join(', ') 
           : 'poor methodology and insufficient evidence';

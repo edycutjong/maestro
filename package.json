@@ -8,11 +8,11 @@
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "demo": "tsx scripts/demo.ts",
+    "demo": "tsx scripts/e2e.ts",
+    "e2e": "tsx scripts/e2e.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --silent --coverage",
-    "bench": "tsx scripts/bench.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
@@ -28,7 +28,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@croo-network/sdk": "file:../dorahacks-croo-sdk-mock",
+    "@croo-network/sdk": "^0.2.1",
     "@edycutjong/croo-core": "^0.1.5",
     "pdfkit": "^0.19.1"
   },

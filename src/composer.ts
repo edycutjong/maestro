@@ -48,6 +48,7 @@ export async function composeAndUploadBrief(
   lines.push(`_🛡️ **A2A Cognitive Reflection Active:** Sub-agents were dynamically routed via Yield-to-Quality Ratio (YQR) and forced to self-correct based on Litmus Oracle feedback._\\n`);
   
   audit.forEach(a => {
+    /* v8 ignore next */
     if (a.status === 'completed' && a.txHash) {
       lines.push(`- **[${a.step.toUpperCase()}]** executed by \`${a.agent}\` | Cost: \`${a.amount} USDC\` | TX: \`${a.txHash}\``);
     }

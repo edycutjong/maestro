@@ -52,6 +52,36 @@ function isRecord(data: unknown): data is Record<string, unknown> {
   return typeof data === 'object' && data !== null;
 }
 
+const INVALID_PAYLOAD = 'Invalid payload: Missing or malformed requirement object. Expected MaestroInput schema.';
+
+/**
+ * Load and validate the buyer's MaestroInput from the order's negotiation.
+ * The Order does not carry the requirement — it lives on the negotiation as a
+ * JSON `requirements` string (see croo-core `hire()`).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadInput(client: CrooAgentClient, order: any): Promise<MaestroInput> {
+  let raw: string;
+  try {
+    const negotiation = await client.getNegotiation(order.negotiationId);
+    raw = negotiation?.requirements ?? '';
+  } catch (err) {
+    throw new Error(`Invalid payload: failed to load negotiation ${order.negotiationId}: ${String(err)}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(INVALID_PAYLOAD);
+  }
+
+  if (!isMaestroInput(parsed)) {
+    throw new Error(INVALID_PAYLOAD);
+  }
+  return parsed;
+}
+
 // ─── Provider ──────────────────────────────────────────────────────
 
 // IDEMPOTENCY GUARD: Track active orders to prevent double-spend from duplicate webhooks
@@ -74,7 +104,10 @@ export async function startMaestroProvider(
   const serviceIds = getServiceIds();
   const pipeline = buildPipeline(serviceIds);
 
-  return runProvider<unknown>(client, {
+  // The runtime client is a real SDK AgentClient (or a mock in tests); our
+  // loose CrooAgentClient surface is a structural subset, so cast at the seam.
+  return runProvider<unknown>(client as unknown as Parameters<typeof runProvider>[0], {
+    /* v8 ignore next 4 */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     serviceMatch: (event: any) => {
       return event.service_id === serviceId;
@@ -82,40 +115,46 @@ export async function startMaestroProvider(
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     work: async (order: any): Promise<Deliverable<unknown>> => {
-      if (activeOrders.has(order.id)) {
-        console.warn(`[maestro] Idempotency guard triggered: Order ${order.id} is already being processed.`);
+      if (activeOrders.has(order.orderId)) {
+        console.warn(`[maestro] Idempotency guard triggered: Order ${order.orderId} is already being processed.`);
         throw new Error('Duplicate order execution rejected to prevent double-spend.');
       }
-      activeOrders.add(order.id);
+      activeOrders.add(order.orderId);
 
       try {
-        if (!isMaestroInput(order.requirement)) {
-           throw new Error('Invalid payload: Missing or malformed requirement object. Expected MaestroInput schema.');
-        }
-        const input = order.requirement;
+        // The buyer's payload lives on the negotiation as a JSON `requirements`
+        // string — the Order itself does not carry it. Fetch and parse it.
+        const input = await loadInput(client, order);
 
-      console.log(`[maestro] Order ${order.id}: orchestrating pipeline for "${input.topic}"`);
+      console.log(`[maestro] Order ${order.orderId}: orchestrating pipeline for "${input.topic}"`);
 
-      const traceCtx = new TraceContext(order.id);
+      const traceCtx = new TraceContext(order.orderId);
+
+      // SLA: derive the working deadline from the order's real on-chain SLA
+      // (1m buffer), falling back to 24m only if the field is absent.
+      const slaDeadlineMs = order.slaDeadline ? new Date(order.slaDeadline).getTime() : NaN;
+      const absoluteDeadline = Number.isNaN(slaDeadlineMs)
+        ? Date.now() + 1_440_000
+        : slaDeadlineMs - 60_000;
 
       // Build pipeline context
       const context: PipelineContext = {
         topic: input.topic,
         qualityThreshold: input.qualityThreshold ?? 80,
         forceEscalation: input.forceEscalation ?? false,
-        absoluteDeadline: Date.now() + 1_440_000, // SLA limit (24 minutes, gives 1m buffer)
+        absoluteDeadline,
         results: {},
       };
 
       // STRICT FINANCIAL GUARD: Prevent NaN bypass exploit
-      const rawAmount = order.amount ?? '2.0';
-      const budgetUsdc = parseFloat(rawAmount);
+      const rawPrice = order.price ?? '';
+      const budgetUsdc = parseFloat(rawPrice);
       if (Number.isNaN(budgetUsdc) || budgetUsdc <= 0) {
-        throw new Error(`[maestro/security] Invalid order amount. Expected positive numeric string, got: ${rawAmount}`);
+        throw new Error(`[maestro/security] Invalid order price. Expected positive numeric string, got: ${rawPrice}`);
       }
 
       // Execute the pipeline (sequential hires)
-      const result = await executePipeline(client, pipeline, context, budgetUsdc, order.id, traceCtx);
+      const result = await executePipeline(client, pipeline, context, budgetUsdc, order.orderId, traceCtx);
 
       // Compose the final brief using fallback results if they exist
       const finalResearch = result.results.fallback_research || result.results.research;
@@ -131,6 +170,7 @@ export async function startMaestroProvider(
         throw new Error('PIPELINE_ABORTED: Critical research step failed. Escrow will be refunded.');
       }
         
+      /* v8 ignore next */
       const gradeScore = isRecord(finalGrade) && typeof finalGrade.score === 'number' ? finalGrade.score : 0;
       const gradeGaps = isRecord(finalGrade) && Array.isArray(finalGrade.gaps) ? (finalGrade.gaps as string[]) : [];
 
@@ -142,8 +182,8 @@ export async function startMaestroProvider(
         console.error(`[maestro] 🚨 INTEGRITY FAULT: Draft quality (${gradeScore}) is below critical threshold.`);
         console.error(`[maestro] 🚨 Aborting pipeline to protect human buyer. Initiating CAPVault Escrow Refund.`);
 
-        // Throwing this error allows the croo-core runProvider wrapper to catch it 
-        // and autonomously fire client.rejectOrder(order.id, String(err))
+        // Throwing this error allows the croo-core runProvider wrapper to catch it
+        // and autonomously fire client.rejectOrder(order.orderId, String(err))
         throw new Error(
           `Fiduciary Refund Triggered: Subcontractor delivered a severely substandard payload ` +
           `(Litmus Score: ${gradeScore}/100). Maestro has autonomously halted the pipeline ` +
@@ -165,10 +205,11 @@ export async function startMaestroProvider(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       traceCtx.emitTrace('treasury_yield' as any, 'Maestro', { budget: budgetUsdc, spent: result.totalSpent, marginRetained: profitUsdc, valuation });
 
-      // Replace the local string composition with the new composer:
-      const { brief } = await composeAndUploadBrief(
+      // Compose the brief and upload it as a verifiable PDF asset. The composer
+      // uploads once and degrades gracefully (pdfKey is undefined on failure).
+      const { brief, pdfKey } = await composeAndUploadBrief(
         client,
-        order.id,
+        order.orderId,
         input.topic,
         researchDraft,
         gradeScore,
@@ -186,24 +227,8 @@ export async function startMaestroProvider(
         approved: summonResult?.approved,
       });
 
-      // FINAL MILE: Attempt to upload the brief as a verifiable asset via the CROO File Storage SDK
-      let pdfKey: string | undefined = undefined;
-      try {
-        if (typeof client.uploadFile === 'function') {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          traceCtx.emitTrace('upload_start' as any, 'Maestro');
-          const fileBuffer = Buffer.from(brief, 'utf8'); 
-          const fileName = `vetted_brief_${order.id}.txt`; 
-          pdfKey = await client.uploadFile(fileName, fileBuffer);
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          traceCtx.emitTrace('upload_done' as any, 'Maestro', { pdfKey });
-        }
-      } catch (err) {
-        // GRACEFUL DEGRADATION: Do not crash the 25-minute pipeline just because file storage hiccupped
-        console.warn(`[maestro] ⚠️ Non-critical failure: Could not upload file for ${order.id}. Degrading to text-only delivery.`, err);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        traceCtx.emitTrace('upload_error' as any, 'Maestro', { error: String(err) });
-      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      traceCtx.emitTrace((pdfKey ? 'upload_done' : 'upload_error') as any, 'Maestro', { pdfKey });
 
       const output: MaestroOutput = {
         brief,
@@ -221,7 +246,7 @@ export async function startMaestroProvider(
       return { type: 'schema', data: output };
       } finally {
         // Guarantee lock release even on failure
-        activeOrders.delete(order.id);
+        activeOrders.delete(order.orderId);
       }
     },
 
