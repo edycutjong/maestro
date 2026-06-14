@@ -16,6 +16,11 @@ vi.mock('../src/state.js', async (importOriginal) => {
   return { ...actual, loadState: vi.fn(), saveState: vi.fn(), clearState: vi.fn() };
 });
 
+vi.mock('../src/reputation.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/reputation.js')>();
+  return { ...actual, updateReputation: vi.fn(), sortProvidersByEfficiency: vi.fn(async (ids: string[]) => ids) };
+});
+
 describe('Maestro Hire Engine', () => {
   const mockClient = { id: 'client-id' };
   let traceCtx: TraceContext;
@@ -29,13 +34,13 @@ describe('Maestro Hire Engine', () => {
 
   it('executes a pipeline sequentially and tracks budget', async () => {
     const pipeline: PipelineStep[] = [
-      { name: 'step1', agent: 'Agent1', serviceId: 'svc1', buildRequirement: () => ({ req: 1 }) },
-      { name: 'step2', agent: 'Agent2', serviceId: 'svc2', buildRequirement: () => ({ req: 2 }) },
+      { name: 'research', agent: 'Agent1', serviceId: 'svc1', buildRequirement: () => ({ req: 1 }) },
+      { name: 'grade', agent: 'Agent2', serviceId: 'svc2', buildRequirement: () => ({ req: 2 }) },
     ];
 
     vi.mocked(core.hire)
       .mockResolvedValueOnce({ orderId: 'o1', amountPaid: '1.0', txHash: 'tx1', durationMs: 100, delivery: { res: 1 } } as any)
-      .mockResolvedValueOnce({ orderId: 'o2', amountPaid: '0.5', txHash: 'tx2', durationMs: 100, delivery: { res: 2 } } as any);
+      .mockResolvedValueOnce({ orderId: 'o2', amountPaid: '0.5', txHash: 'tx2', durationMs: 100, delivery: { score: 90 } } as any);
 
     const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order', traceCtx);
 
@@ -43,8 +48,8 @@ describe('Maestro Hire Engine', () => {
     expect(result.totalSpent).toBe(1.5);
     expect(result.audit).toHaveLength(2);
     expect(result.audit[0].status).toBe('completed');
-    expect(result.results.step1).toEqual({ res: 1 });
-    expect(result.results.step2).toEqual({ res: 2 });
+    expect(result.results.research).toEqual({ res: 1 });
+    expect(result.results.grade).toEqual({ score: 90 });
     expect(state.saveState).toHaveBeenCalledTimes(2);
     expect(state.clearState).toHaveBeenCalledWith('master_order');
   });
@@ -144,5 +149,87 @@ describe('Maestro Hire Engine', () => {
     const gateCheck = log.find(e => e.type === 'gate_check');
     expect(gateCheck).toBeDefined();
     expect(gateCheck?.data).toMatchObject({ score: 75, threshold: 80, escalated: true });
+  });
+
+  it('aborts outbound hires if SLA critical limit is reached', async () => {
+    const pipeline: PipelineStep[] = [
+      { name: 'step1', agent: 'Agent1', serviceId: 'svc1', buildRequirement: () => ({}) },
+    ];
+    // SLA deadline is in the past
+    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {}, absoluteDeadline: Date.now() - 1000 }, 5.0, 'master_order', traceCtx);
+    
+    expect(core.hire).not.toHaveBeenCalled();
+  });
+
+  it('cascades to failover node and logs success', async () => {
+    const pipeline: PipelineStep[] = [
+      { name: 'research', agent: 'Agent1', serviceId: ['svc1', 'svc2'], buildRequirement: () => ({}) },
+    ];
+    
+    // svc1 fails 3 times, svc2 succeeds
+    vi.mocked(core.hire)
+      .mockRejectedValueOnce(new Error('svc1 fail 1'))
+      .mockRejectedValueOnce(new Error('svc1 fail 2'))
+      .mockRejectedValueOnce(new Error('svc1 fail 3'))
+      .mockResolvedValueOnce({ orderId: 'o2', amountPaid: '1.0', durationMs: 100, delivery: {} } as any);
+
+    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order', traceCtx);
+
+    expect(core.hire).toHaveBeenCalledTimes(4);
+    expect(result.audit[0].agent).toContain('Failover Node');
+  });
+
+  it('throws an error if sub-agent returns invalid amountPaid', async () => {
+    const pipeline: PipelineStep[] = [
+      { name: 'research', agent: 'Agent1', serviceId: 'svc1', buildRequirement: () => ({}) },
+    ];
+    
+    vi.mocked(core.hire).mockResolvedValueOnce({ orderId: 'o1', amountPaid: 'invalid', durationMs: 100, delivery: {} } as any);
+
+    await expect(executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order', traceCtx))
+      .rejects.toThrow('Sub-agent returned invalid amountPaid');
+  });
+
+  it('times out and retries if execution exceeds SLA', async () => {
+    vi.mocked(core.hire).mockImplementation(async () => {
+      await new Promise(r => setTimeout(r, 100)); // sleep
+      return { orderId: 'timeout-order', delivery: { draft: 'slow' }, txHash: 'tx', amountPaid: '1' } as any;
+    });
+
+    const pipeline = [
+      {
+        name: 'step1',
+        agent: 'SlowAgent',
+        serviceId: 'svc_slow',
+        buildRequirement: () => ({}),
+      }
+    ] as PipelineStep[];
+
+    const ctx = { topic: 'test', qualityThreshold: 80, forceEscalation: false, absoluteDeadline: 0, results: {} };
+
+    const emitSpy = vi.spyOn(traceCtx, 'emitTrace');
+    await executePipeline(mockClient as any, pipeline, ctx, 10.0, 'timeout_order', traceCtx);
+    expect(emitSpy).toHaveBeenCalledWith('hire_failed', 'SlowAgent', expect.objectContaining({ error: expect.stringContaining('timed out') }));
+  });
+
+  it('throws an error for invalid amountPaid returned by sub-agent', async () => {
+    vi.mocked(core.hire).mockResolvedValueOnce({
+      orderId: 'bad-amount', delivery: {}, txHash: 'tx', amountPaid: 'invalid_float'
+    } as any);
+
+    const pipeline = [
+      {
+        name: 'step1',
+        agent: 'Agent',
+        serviceId: 'svc',
+        buildRequirement: () => ({}),
+      }
+    ] as PipelineStep[];
+
+    const ctx = { topic: 'test', qualityThreshold: 80, forceEscalation: false, absoluteDeadline: 0, results: {} };
+
+    const emitSpy = vi.spyOn(traceCtx, 'emitTrace');
+    await executePipeline(mockClient as any, pipeline, ctx, 10.0, 'bad_amount_order', traceCtx);
+    expect(emitSpy).toHaveBeenCalledWith('hire_failed', 'Agent', expect.objectContaining({ error: expect.stringContaining('invalid amountPaid') }));
   });
 });

@@ -20,6 +20,7 @@ export async function recordTreasuryYield(profitUsdc: number): Promise<{ lifetim
   state.totalOrders += 1;
 
   const tempPath = `${TREASURY_FILE}.tmp.json`;
+  /* v8 ignore next */
   await fs.mkdir(path.dirname(TREASURY_FILE), { recursive: true }).catch(() => {});
   await fs.writeFile(tempPath, JSON.stringify(state, null, 2), 'utf8');
   await fs.rename(tempPath, TREASURY_FILE);

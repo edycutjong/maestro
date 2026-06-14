@@ -18,12 +18,10 @@ export interface PipelineContext {
   vendorCostUsed?: number; // <-- 🛡️ ADD THIS: Track capital spent on the specific vendor
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const getDraft = (res: unknown): string => 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (typeof res === 'object' && res !== null && 'draft' in res && typeof (res as any).draft === 'string') ? (res as any).draft : '';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const getScore = (res: unknown): number => 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (typeof res === 'object' && res !== null && 'score' in res && typeof (res as any).score === 'number') ? (res as any).score : 100;
