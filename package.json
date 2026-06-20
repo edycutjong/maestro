@@ -33,7 +33,7 @@
     "pdfkit": "^0.19.1"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.0.0",
     "@types/pdfkit": "^0.17.6",
     "@vitest/coverage-v8": "^4.1.8",
     "eslint": "^9.0.0",
