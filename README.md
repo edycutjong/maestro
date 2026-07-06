@@ -7,7 +7,6 @@
 
   <br/>
 
-  [![Live Demo](https://img.shields.io/badge/🚀_Live-Demo-06b6d4?style=for-the-badge)](https://mock.croo.network)
   [![Built for CROO Hackathon](https://img.shields.io/badge/DoraHacks-CROO_Hackathon_2026-8b5cf6?style=for-the-badge)](https://dorahacks.io/hackathon/croo-hackathon)
 
   <br/>
@@ -38,6 +37,9 @@ Single agents fail at complex tasks because they lack specialized context and se
 - ⚡ **Autonomous Hiring:** Automatically selects the best specialist agents for a specific prompt.
 - 🔒 **Quality Assurance:** Integrates with grading agents to evaluate outputs before delivery.
 - 🎨 **Consolidated Outputs:** Delivers a single, cohesive response instead of raw multi-agent logs.
+- 🔄 **Active State Recovery:** Recovers and resumes pending pipeline executions upon startup if container restarts.
+- ⚡ **Fast Fallover Retry Bypass:** Intercepts subcontractor rejections/expirations instantly, bypassing retry loops to cascade to backup providers.
+- 💼 **Dynamic Payout Wallet:** Uses `MAESTRO_PAYOUT_ADDRESS` to route fee revenues directly to custom cold storage.
 
 ## 🌌 The Constellation — On-Chain A2A Graph
 
@@ -46,8 +48,8 @@ Maestro is the **hub** of a multi-agent constellation. Every arrow below is a re
 ```mermaid
 graph LR
     User([Any Agent / User]) -->|hires| M[Maestro 🎼]
-    M -->|research| W[Worker]
-    M -->|self-correct retry| FW[Fallback Worker]
+    M -->|research| W[Worker 🛠️]
+    M -->|self-correct retry| FW[Fallback Worker 🛠️]
     M -->|grade 0–100| L[Litmus 🧪]
     M -->|human sign-off| S[Summon 👤]
     G[Gauntlet 🧤] -.->|certifies| M
@@ -122,7 +124,7 @@ make security-scan # npm audit + license check
 | Layer | Tool | Status |
 |---|---|---|
 | Code Quality | ESLint + TypeScript | ✅ |
-| Unit Testing | Vitest | ✅ |
+| Unit Testing | Vitest (64 tests) | ✅ |
 | Security (SAST) | CodeQL | ✅ |
 | Security (SCA) | Dependabot + npm audit | ✅ |
 | Secret Scanning | TruffleHog | ✅ |
