@@ -104,9 +104,9 @@ export async function startMaestroProvider(
   const serviceIds = getServiceIds();
   const pipeline = buildPipeline(serviceIds);
 
-  // The runtime client is a real SDK AgentClient (or a mock in tests); our
-  // loose CrooAgentClient surface is a structural subset, so cast at the seam.
   return runProvider<unknown>(client as unknown as Parameters<typeof runProvider>[0], {
+    enableStateRecovery: true,
+    payoutAddress: process.env.MAESTRO_PAYOUT_ADDRESS,
     /* v8 ignore next 4 */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     serviceMatch: (event: any) => {

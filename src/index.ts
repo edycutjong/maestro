@@ -13,6 +13,11 @@
 import { makeClient, isMockMode } from '@edycutjong/croo-core';
 import { startMaestroProvider, getActiveOrderCount } from './provider.js';
 import { sweepStaleState } from './state.js';
+import * as http from 'http';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+import { activeTraces } from './trace.js';
 
 async function main() {
   console.log('╔══════════════════════════════════════════╗');
@@ -41,6 +46,56 @@ async function main() {
   const client = isMockMode() ? {} : makeClient(sdkKey!);
   const stream = await startMaestroProvider(client, serviceId);
 
+  // Start HTTP Server to serve UI and traces
+  const port = process.env.PORT || 3002;
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const uiPath = path.join(__dirname, '../ui/index.html');
+
+  const server = http.createServer((req, res) => {
+    const parsedUrl = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+    
+    if (parsedUrl.pathname === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', service: 'maestro' }));
+      return;
+    }
+
+    if (parsedUrl.pathname === '/trace') {
+      const orderId = parsedUrl.searchParams.get('orderId');
+      if (!orderId) {
+        res.writeHead(400);
+        return res.end('Missing orderId parameter');
+      }
+      
+      const trace = activeTraces.get(orderId);
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      });
+      return res.end(JSON.stringify(trace ?? []));
+    }
+
+    if (parsedUrl.pathname === '/' || parsedUrl.pathname === '/index.html') {
+      fs.readFile(uiPath, 'utf-8', (err, content) => {
+        if (err) {
+          res.writeHead(500);
+          return res.end('Failed to load UI index.html');
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(content);
+      });
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  server.listen(port, () => {
+    console.log(`[Lifecycle] 🩺 Health & UI server bound to port ${port}`);
+  });
+
   let isShuttingDown = false;
   const shutdown = async () => {
     if (isShuttingDown) return;
@@ -49,6 +104,10 @@ async function main() {
     console.log('\n[maestro] Caught termination signal. Halting inbound connections...');
     if (stream && typeof (stream as { close?: () => void }).close === 'function') {
       (stream as { close: () => void }).close();
+    }
+
+    if (server && typeof server.close === 'function') {
+      server.close();
     }
 
     console.log(`[maestro] Draining ${getActiveOrderCount()} in-flight orders...`);
@@ -91,3 +150,4 @@ main().catch((err) => {
   console.error('[maestro] Fatal error:', err);
   process.exit(1);
 });
+

@@ -1,9 +1,13 @@
 import type { TraceEvent, TraceEventType } from '@edycutjong/croo-core';
 
+export const activeTraces = new Map<string, TraceEvent[]>();
+
 export class TraceContext {
   private traceLog: TraceEvent[] = [];
   
-  constructor(private orderId: string) {}
+  constructor(private orderId: string) {
+    activeTraces.set(orderId, this.traceLog);
+  }
 
   public emitTrace = (type: TraceEventType, agent: string, data?: Record<string, unknown>): void => {
     const event: TraceEvent = { type, agent, timestamp: Date.now(), data };
@@ -22,3 +26,4 @@ export class TraceContext {
     };
   };
 }
+

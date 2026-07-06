@@ -178,6 +178,22 @@ describe('Maestro Hire Engine', () => {
     expect(core.hire).toHaveBeenCalledTimes(4);
     expect(result.audit[0].agent).toContain('Failover Node');
   });
+  
+  it('bypasses retries and cascades immediately on ORDER_REJECTED or ORDER_EXPIRED error', async () => {
+    const pipeline: PipelineStep[] = [
+      { name: 'research', agent: 'Agent1', serviceId: ['svc1', 'svc2', 'svc3'], buildRequirement: () => ({}) },
+    ];
+    
+    vi.mocked(core.hire)
+      .mockRejectedValueOnce('ORDER_REJECTED')
+      .mockRejectedValueOnce(new Error('ORDER_EXPIRED'))
+      .mockResolvedValueOnce({ orderId: 'o3', amountPaid: '1.0', durationMs: 100, delivery: {} } as any);
+
+    const result = await executePipeline(mockClient as any, pipeline, { topic: 'test', qualityThreshold: 80, forceEscalation: false, results: {} }, 5.0, 'master_order', traceCtx);
+
+    expect(core.hire).toHaveBeenCalledTimes(3);
+    expect(result.audit[0].agent).toContain('Failover Node');
+  });
 
   it('throws an error if sub-agent returns invalid amountPaid', async () => {
     const pipeline: PipelineStep[] = [

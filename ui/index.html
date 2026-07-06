@@ -58,6 +58,7 @@
     }
     .node.success {
       border-color: var(--success);
+      box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
     }
     .node-title {
       font-weight: bold;
@@ -95,9 +96,9 @@
 
   <div class="graph-container" id="graph">
     <!-- Stubbed nodes -->
-    <div class="node active">
+    <div class="node">
       <div class="node-title">Maestro</div>
-      <div class="node-status">Orchestrating...</div>
+      <div class="node-status">Pending</div>
     </div>
     <div class="arrow">→</div>
     <div class="node">
@@ -112,7 +113,7 @@
     <div class="arrow">→</div>
     <div class="node">
       <div class="node-title">Summon</div>
-      <div class="node-status">Conditional</div>
+      <div class="node-status">Pending</div>
     </div>
   </div>
 
@@ -120,13 +121,109 @@
   <div class="trace-log" id="trace">
     <div class="trace-entry">
       <span class="trace-time">[00:00:00]</span> 
-      <span class="trace-agent">Maestro</span>: pipeline_start { topic: "ZKP" }
+      <span class="trace-agent">Maestro</span>: Initializing...
     </div>
   </div>
 
   <script>
-    // In the real demo, this will fetch from Maestro's /trace endpoint
-    console.log("Maestro UI Stub Loaded. Ready for WebSocket trace stream integration.");
+    const urlParams = new URLSearchParams(window.location.search);
+    const orderId = urlParams.get('orderId');
+    const traceContainer = document.getElementById('trace');
+    const nodes = {
+      Maestro: document.querySelector('.node:nth-child(1)'),
+      Worker: document.querySelector('.node:nth-child(3)'),
+      Litmus: document.querySelector('.node:nth-child(5)'),
+      Summon: document.querySelector('.node:nth-child(7)'),
+    };
+
+    if (!orderId) {
+      traceContainer.innerHTML = '<div class="trace-entry" style="color: var(--error);">Error: No orderId provided in query string (e.g. ?orderId=mock_order_1)</div>';
+    } else {
+      let seenEvents = 0;
+      async function poll() {
+        try {
+          const res = await fetch(`/trace?orderId=${encodeURIComponent(orderId)}`);
+          if (!res.ok) return;
+          const trace = await res.json();
+          
+          if (trace.length > 0) {
+            traceContainer.innerHTML = '';
+          } else {
+            traceContainer.innerHTML = '<div class="trace-entry" style="color: #64748b;">No traces logged yet for this order.</div>';
+          }
+          
+          // Render each event
+          trace.forEach(event => {
+            const time = new Date(event.timestamp).toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'trace-entry';
+            entry.innerHTML = `
+              <span class="trace-time">[${time}]</span> 
+              <span class="trace-agent">${event.agent}</span>: 
+              <span style="color: #cbd5e1">${event.type}</span> 
+              <span style="color: #64748b">${event.data ? JSON.stringify(event.data) : ''}</span>
+            `;
+            traceContainer.appendChild(entry);
+          });
+
+          // Auto-scroll trace log to bottom if new events arrived
+          if (trace.length > seenEvents) {
+            traceContainer.scrollTop = traceContainer.scrollHeight;
+            seenEvents = trace.length;
+          }
+
+          // Reset all nodes to pending
+          Object.values(nodes).forEach(n => {
+            if (n) {
+              n.classList.remove('active', 'success');
+              const statusEl = n.querySelector('.node-status');
+              if (statusEl) statusEl.textContent = 'Pending';
+            }
+          });
+
+          // Active/Success based on trace history
+          trace.forEach(event => {
+            let agentName = event.agent;
+            if (agentName.startsWith('Worker') || agentName.startsWith('FallbackWorker')) agentName = 'Worker';
+            if (agentName.startsWith('Litmus')) agentName = 'Litmus';
+            if (agentName.startsWith('Summon')) agentName = 'Summon';
+
+            const node = nodes[agentName];
+            if (node) {
+              const statusEl = node.querySelector('.node-status');
+              if (event.type === 'hire_start' || event.type === 'hire_attempt' || event.type === 'negotiate_start') {
+                node.classList.add('active');
+                if (statusEl) statusEl.textContent = 'In Progress';
+              } else if (event.type === 'hire_delivered' || event.type === 'completed' || event.type === 'pipeline_done' || event.type === 'pipeline_start' || event.type === 'pipeline_resume') {
+                node.classList.add('success');
+                if (statusEl) statusEl.textContent = 'Completed';
+              }
+            }
+          });
+
+          // Maestro remains active or success if pipeline is running or complete
+          const hasDone = trace.some(e => e.type === 'pipeline_done');
+          const hasStart = trace.some(e => e.type === 'pipeline_start' || e.type === 'pipeline_resume');
+          if (nodes.Maestro) {
+            const statusEl = nodes.Maestro.querySelector('.node-status');
+            if (hasDone) {
+              nodes.Maestro.classList.add('success');
+              if (statusEl) statusEl.textContent = 'Completed';
+            } else if (hasStart) {
+              nodes.Maestro.classList.add('active');
+              if (statusEl) statusEl.textContent = 'Orchestrating';
+            }
+          }
+
+        } catch (err) {
+          console.error('Error polling trace log:', err);
+        }
+      }
+
+      // Poll every 1000ms
+      setInterval(poll, 1000);
+      poll();
+    }
   </script>
 </body>
 </html>

@@ -116,8 +116,14 @@ export async function executePipeline(
             }
           } catch (err) {
             lastErr = err;
-            retries--;
-            if (retries > 0) await new Promise(r => setTimeout(r, Math.pow(2, 3 - retries) * 1000));
+            const errMsg = err instanceof Error ? err.message : String(err);
+            if (errMsg === 'ORDER_REJECTED' || errMsg === 'ORDER_EXPIRED') {
+              console.warn(`[maestro/hire] Sub-agent rejected/expired order: ${errMsg}. Bypassing retries and cascading.`);
+              retries = 0;
+            } else {
+              retries--;
+              if (retries > 0) await new Promise(r => setTimeout(r, Math.pow(2, 3 - retries) * 1000));
+            }
           }
         }
 
