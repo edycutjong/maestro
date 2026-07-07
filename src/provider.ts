@@ -43,13 +43,46 @@ function getServiceIds() {
   };
 }
 
-function isMaestroInput(data: unknown): data is MaestroInput {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return typeof data === 'object' && data !== null && typeof (data as any).topic === 'string';
-}
-
 function isRecord(data: unknown): data is Record<string, unknown> {
   return typeof data === 'object' && data !== null;
+}
+
+/**
+ * Normalize the buyer's requirement into a MaestroInput, accepting every shape
+ * the CROO dashboard / SDK may produce:
+ *  - a MaestroInput object: {"topic":"...", qualityThreshold?, forceEscalation?}
+ *  - the free-text form payload: {"text":"..."} (also prompt/task/description)
+ *  - a bare JSON string, or plain non-JSON text
+ * Returns null only when no usable topic can be found.
+ */
+function normalizeInput(raw: string): MaestroInput | null {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    // Not valid JSON — reject (the CROO form always sends a JSON payload).
+    return null;
+  }
+
+  if (typeof parsed === 'string') {
+    const t = parsed.trim();
+    return t ? { topic: t } : null;
+  }
+
+  if (!isRecord(parsed)) return null;
+
+  const topicRaw =
+    parsed.topic ?? parsed.text ?? parsed.prompt ?? parsed.task ?? parsed.description;
+  const topic = typeof topicRaw === 'string' ? topicRaw.trim() : '';
+  if (!topic) return null;
+
+  const out: MaestroInput = { topic };
+  if (typeof parsed.qualityThreshold === 'number') out.qualityThreshold = parsed.qualityThreshold;
+  if (typeof parsed.forceEscalation === 'boolean') out.forceEscalation = parsed.forceEscalation;
+  return out;
 }
 
 const INVALID_PAYLOAD = 'Invalid payload: Missing or malformed requirement object. Expected MaestroInput schema.';
@@ -69,17 +102,11 @@ async function loadInput(client: CrooAgentClient, order: any): Promise<MaestroIn
     throw new Error(`Invalid payload: failed to load negotiation ${order.negotiationId}: ${String(err)}`);
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
+  const input = normalizeInput(raw);
+  if (!input) {
     throw new Error(INVALID_PAYLOAD);
   }
-
-  if (!isMaestroInput(parsed)) {
-    throw new Error(INVALID_PAYLOAD);
-  }
-  return parsed;
+  return input;
 }
 
 // ─── Provider ──────────────────────────────────────────────────────

@@ -8,6 +8,23 @@ import { updateReputation, sortProvidersByEfficiency } from './reputation.js';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AgentClient = any;
 
+/**
+ * Sub-agents deliver structured results ({draft,sources} / {score,gaps,...}) as
+ * a JSON string inside a `text` deliverable. Parse it back into an object so
+ * downstream steps can read fields; leave plain strings/objects untouched.
+ */
+function coerceDeliveryObject(delivery: unknown): unknown {
+  if (typeof delivery !== 'string') return delivery;
+  const trimmed = delivery.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return delivery;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return typeof parsed === 'object' && parsed !== null ? parsed : delivery;
+  } catch {
+    return delivery;
+  }
+}
+
 export interface HireEngineResult {
   /** Accumulated results from all steps. */
   results: Record<string, unknown>;
@@ -178,7 +195,10 @@ export async function executePipeline(
 
       // USDC PRECISION: Clamp to 6 decimals to prevent IEEE-754 float drift
       totalSpent = Math.round((totalSpent + paidFloat) * 1_000_000) / 1_000_000;
-      context.results[step.name] = result!.delivery;
+      // Sub-agents deliver structured payloads (e.g. {draft,sources} / {score,gaps})
+      // as a JSON string in a `text` deliverable. Parse it back to an object so
+      // downstream steps (getDraft/getScore, escalation, compose) see fields.
+      context.results[step.name] = coerceDeliveryObject(result!.delivery);
 
     } catch (err) {
       auditEntry.status = 'failed';
