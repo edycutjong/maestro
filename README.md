@@ -66,16 +66,18 @@ graph LR
 
 Real CAP orders settled in USDC during the hackathon. As the constellation **hub**, one Maestro request fans out into several sub-hires — so each run adds multiple rows.
 
-**Total real CAP orders: _0_** · _last updated: 2026-06-__
+**Total real CAP orders: 6** · _last updated: 2026-07-07_ · one Navigator request → 5 autonomous sub-hires, incl. human-in-the-loop.
 
-| # | Date | Role | Counterparty | Amount (USDC) | Order ID | Tx (BaseScan) | Result |
-|---|------|------|--------------|---------------|----------|---------------|--------|
-| 1 | _2026-06-__ | Provider (paid) | _requester_ | _0.00_ | `_ord_…_` | [0x…](https://basescan.org/tx/0x…) | brief delivered |
-| 2 | _2026-06-__ | Requester (hired) | Worker | _0.00_ | `_ord_…_` | [0x…](https://basescan.org/tx/0x…) | research |
-| 3 | _2026-06-__ | Requester (hired) | Litmus 🧪 | _0.00_ | `_ord_…_` | [0x…](https://basescan.org/tx/0x…) | score _N_/100 |
-| 4 | _2026-06-__ | Requester (hired) | Summon 👤 | _0.00_ | `_ord_…_` | [0x…](https://basescan.org/tx/0x…) | approved |
+Topic: *"Well-sourced research brief on zero-knowledge proofs in DAOs."* Grade climbed 69 → 76 via a self-correction loop, then escalated to a human who approved. Each row is `[pay tx]` · `[deliver tx]` on Base Mainnet.
 
-> Every sub-hire is already captured in the delivered `audit[]` array (`orderId`, `amount`, `txHash`) — copy those straight in. Delete this note once populated.
+| # | Date | Role | Counterparty | USDC | Order ID | Tx (BaseScan) | Result |
+|---|------|------|--------------|------|----------|---------------|--------|
+| 1 | 2026-07-07 | Provider (paid) | Navigator | 1.00 | `98d0adae` | [pay](https://basescan.org/tx/0xdb9dc068a95b8da9367229259ff49756f8007cb9795208ca84b1fafa8e17e538) · [deliver](https://basescan.org/tx/0x65a29703ab2af544302352088d26f2fc46c507a985ed94bfad0569f01c4f7eed) | PDF brief delivered (human-approved) |
+| 2 | 2026-07-07 | Requester (hired) | Worker | 0.10 | `82878d87` | [pay](https://basescan.org/tx/0x3027fb543d75ba8ed11345c28e4cdeebcf1d9e8a00ca55b62c78437e1489c073) · [deliver](https://basescan.org/tx/0xd524336641fca544bd791bdbcdfd13500129efd1b8e93028446aff749aef2346) | research draft |
+| 3 | 2026-07-07 | Requester (hired) | Litmus 🧪 | 0.05 | `9da4458a` | [pay](https://basescan.org/tx/0x920d1265b48f2d7552c15b4b0c9bec983244a86c69fad152911fb3827a1b401a) · [deliver](https://basescan.org/tx/0x0fe4027fbd04978498bf3ece48008735948957c5255aaf457c8d321b8ae56835) | score 69/100 |
+| 4 | 2026-07-07 | Requester (hired) | Worker (fallback) | 0.10 | `9087342c` | [pay](https://basescan.org/tx/0x65c258c1db5058b8f13716483229508b3b284f835b9e3810a7f8a550fa0353bc) · [deliver](https://basescan.org/tx/0x0c3b5afe082bfc0a78da9268aad81f71d69ec0b38313769fef9476f5705a9033) | self-correction re-research |
+| 5 | 2026-07-07 | Requester (hired) | Litmus 🧪 | 0.05 | `3f72221e` | [pay](https://basescan.org/tx/0xfc1099b5e9b589097c799219a129afcd4154eac453caab2c0731704d8048b3a1) · [deliver](https://basescan.org/tx/0x51d38da2a6ef96d82ff875c2b129f03670d196ed28b50f7f8fb6ee0d84a184bc) | score 76/100 |
+| 6 | 2026-07-07 | Requester (hired) | Summon 👤 | 0.05 | `9dc01628` | [pay](https://basescan.org/tx/0xc06282c5979ce93c24ac08ea1079c183da5572ce8171049f7d1d43a402f67861) · [deliver](https://basescan.org/tx/0x1a345f4b6ed1a7346ce99fc773f5cc33e6b3259d5bb753771286d81dbd43ee83) | ✅ human approved (Telegram) |
 
 ## 🏗️ Architecture & Tech Stack
 
