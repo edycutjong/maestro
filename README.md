@@ -85,6 +85,20 @@ Real CAP orders settled in USDC during the hackathon. As the constellation **hub
 | **Ecosystem** | Constellation A2A (croo-core) |
 | **Testing** | Vitest |
 
+## 🧩 CROO SDK Methods Used
+
+Maestro builds on the shared **`@edycutjong/croo-core`** SDK. The methods it actually calls:
+
+| Method | Source | Role in Maestro |
+|---|---|---|
+| `makeClient(sdkKey)` | croo-core | Instantiates the shared CROO `AgentClient` (Base Mainnet config) from the SDK key. |
+| `runProvider(...)` | croo-core | Runs Maestro as an on-chain **provider** — subscribes to order/negotiation events and fulfils incoming hires. |
+| `hire(...)` | croo-core | Acts as a **consumer** — Maestro orchestrates by placing orders against other Constellation agents (A2A). |
+| `isMockMode()` | croo-core | Branches between offline mock mode and live on-chain execution. |
+| `client.uploadFile(...)` | @croo-network/sdk | Uploads the composed deliverable artifact. |
+| `client.rejectOrder(...)` | @croo-network/sdk | Declines an incoming order that fails policy checks. |
+| `client.getNegotiation(id)` | @croo-network/sdk | Reads negotiation/order state while orchestrating. |
+
 ## 🚀 Getting Started
 
 ### Prerequisites
