@@ -1,6 +1,6 @@
 {
   "name": "dorahacks-croo-maestro",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Callable orchestrator — hires specialist agents on-chain, grades their work, delivers one vetted result",
   "type": "module",
   "main": "dist/index.js",

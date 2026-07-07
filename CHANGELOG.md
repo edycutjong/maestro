@@ -1,3 +1,10 @@
+## [0.2.2](https://github.com/edycutjong/maestro/compare/v0.2.1...v0.2.2) (2026-07-07)
+
+
+### Bug Fixes
+
+* accept free-text requirement + parse sub-agent JSON deliverables ([bb0ed60](https://github.com/edycutjong/maestro/commit/bb0ed600f17c991b00db1456ab42095471c042e7))
+
 ## [0.2.1](https://github.com/edycutjong/maestro/compare/v0.2.0...v0.2.1) (2026-07-06)
 
 
