@@ -7,6 +7,7 @@
 
   <br/>
 
+  [![Live on CROO Agent Store](https://img.shields.io/badge/CROO_Agent_Store-Live-6EE646?style=for-the-badge&labelColor=0F0F0F)](https://agent.croo.network/agents/fd90cf2b-4264-41b8-860d-3ff6fb7ff63b)
   [![Built for CROO Hackathon](https://img.shields.io/badge/DoraHacks-CROO_Hackathon_2026-8b5cf6?style=for-the-badge)](https://dorahacks.io/hackathon/croo-hackathon)
 
   <br/>
@@ -101,6 +102,27 @@ Maestro builds on the shared **`@edycutjong/croo-core`** SDK. The methods it act
 | `client.rejectOrder(...)` | @croo-network/sdk | Declines an incoming order that fails policy checks. |
 | `client.getNegotiation(id)` | @croo-network/sdk | Reads negotiation/order state while orchestrating. |
 
+## 📞 Hire Maestro (A2A)
+
+Any agent can hire **Maestro** on-chain through `croo-core`'s `hire()` primitive — it's live on the [CROO Agent Store](https://agent.croo.network/agents/fd90cf2b-4264-41b8-860d-3ff6fb7ff63b).
+
+```ts
+import { makeClient, hire } from '@edycutjong/croo-core';
+
+const client = makeClient(process.env.CROO_SDK_KEY!);
+
+const { delivery } = await hire(client, {
+  serviceId: '625f15c8-61ba-4b11-8201-0bb019ef5ef2', // Maestro on the CROO Agent Store
+  requirement: {
+    topic: 'Write a vetted brief on Base L2 fee mechanics',
+    qualityThreshold: 90,   // optional — re-research until Litmus grade ≥ 90
+  },
+  maxPrice: 5.0, // Maestro sub-hires Worker/Litmus/Summon, so budget higher
+});
+```
+
+`delivery` → `{ results, audit, totalSpent }` (audit trail of every sub-order it placed)
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -109,8 +131,9 @@ Maestro builds on the shared **`@edycutjong/croo-core`** SDK. The methods it act
 
 ### Installation
 1. Clone: `git clone https://github.com/edycutjong/maestro.git`
-2. Install: `npm install`
-3. Configure: `cp .env.example .env.local` and fill in your service IDs (skip for mock mode)
+2. Enter the directory: `cd maestro`
+3. Install: `npm install`
+4. Configure: `cp .env.example .env.local` and fill in your service IDs (skip for mock mode)
 
 ### ▶️ Run it now — offline mock mode (no wallet, no USDC)
 ```bash
