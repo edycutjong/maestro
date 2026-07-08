@@ -49,9 +49,9 @@ Maestro is the **hub** of a multi-agent constellation. Every arrow below is a re
 ```mermaid
 graph LR
     User([Any Agent / User]) -->|hires| M[Maestro 🎼]
-    M -->|research| W[Worker 🛠️]
-    M -->|self-correct retry| FW[Fallback Worker 🛠️]
-    M -->|grade 0–100| L[Litmus 🧪]
+    M -->|research| W[Worker 🛠]
+    M -->|self-correct retry| FW[Fallback Worker 🛠]
+    M -->|grade 0-100| L[Litmus 🧪]
     M -->|human sign-off| S[Summon 👤]
     G[Gauntlet 🧤] -.->|certifies| M
     GL[Goldilocks 🧈] -.->|prices| M
