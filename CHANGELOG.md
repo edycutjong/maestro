@@ -1,3 +1,10 @@
+# [0.3.0](https://github.com/edycutjong/maestro/compare/v0.2.2...v0.3.0) (2026-07-08)
+
+
+### Features
+
+* **icon:** waypoints glyph + Agent Store badge, hire example, community files ([c66e773](https://github.com/edycutjong/maestro/commit/c66e77334aed67ffc2a8b9238206d578d228d4fd))
+
 ## [0.2.2](https://github.com/edycutjong/maestro/compare/v0.2.1...v0.2.2) (2026-07-07)
 
 
