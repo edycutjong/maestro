@@ -1,3 +1,10 @@
+## [0.3.1](https://github.com/edycutjong/maestro/compare/v0.3.0...v0.3.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* **icon:** animated icon renders on GitHub (SMIL + real transform) ([5740368](https://github.com/edycutjong/maestro/commit/57403686d94e2a5cad134c5c8fb672a36c97692d))
+
 # [0.3.0](https://github.com/edycutjong/maestro/compare/v0.2.2...v0.3.0) (2026-07-08)
 
 
