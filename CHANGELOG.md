@@ -1,3 +1,10 @@
+## [0.3.2](https://github.com/edycutjong/maestro/compare/v0.3.1...v0.3.2) (2026-07-11)
+
+
+### Bug Fixes
+
+* **deps:** bump croo-core 0.4.0 -> 0.5.1 (fixes sub-agent hire timeout) ([4e75330](https://github.com/edycutjong/maestro/commit/4e75330e7bc0a1b2e9e61d2ae5735937b21f2a67))
+
 ## [0.3.1](https://github.com/edycutjong/maestro/compare/v0.3.0...v0.3.1) (2026-07-08)
 
 
