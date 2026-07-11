@@ -29,7 +29,7 @@
   "license": "MIT",
   "dependencies": {
     "@croo-network/sdk": "^0.2.1",
-    "@edycutjong/croo-core": "^0.4.0",
+    "@edycutjong/croo-core": "^0.5.1",
     "pdfkit": "^0.19.1"
   },
   "devDependencies": {
