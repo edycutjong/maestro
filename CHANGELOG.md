@@ -1,3 +1,10 @@
+## [0.3.3](https://github.com/edycutjong/maestro/compare/v0.3.2...v0.3.3) (2026-07-12)
+
+
+### Bug Fixes
+
+* **composer:** pass Uint8Array to Blob so PDF upload typechecks on @types/node 26 ([ff2e79e](https://github.com/edycutjong/maestro/commit/ff2e79ed29334af184d0a0219b0ea35646fde6a7)), closes [#20](https://github.com/edycutjong/maestro/issues/20)
+
 ## [0.3.2](https://github.com/edycutjong/maestro/compare/v0.3.1...v0.3.2) (2026-07-11)
 
 
