@@ -9,7 +9,7 @@
 
   [![Live on CROO Agent Store](https://img.shields.io/badge/CROO_Agent_Store-Live-6EE646?style=for-the-badge&labelColor=0F0F0F)](https://agent.croo.network/agents/fd90cf2b-4264-41b8-860d-3ff6fb7ff63b)
   [![Live Pitch Page](https://img.shields.io/badge/Live_Pitch-View-EC4899?style=for-the-badge&labelColor=0F0F0F)](https://edycutjong.github.io/maestro/)
-  [![Built for CROO Hackathon](https://img.shields.io/badge/DoraHacks-CROO_Hackathon_2026-8b5cf6?style=for-the-badge)](https://dorahacks.io/hackathon/croo-hackathon)
+  [![DoraHacks BUIDL](https://img.shields.io/badge/DoraHacks-BUIDL_%2347027-8b5cf6?style=for-the-badge&labelColor=0F0F0F)](https://dorahacks.io/buidl/47027)
 
   <br/>
 
