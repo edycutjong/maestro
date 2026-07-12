@@ -82,7 +82,7 @@ export async function composeAndUploadBrief(
   console.log(`[maestro/composer] Uploading PDF payload to CROO network...`);
   let pdfKey: string | undefined;
   try {
-    const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
+    const blob = new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' });
     pdfKey = await client.uploadFile(`maestro_brief_${orderId}.pdf`, blob);
     console.log(`[maestro] Order ${orderId}: PDF uploaded securely (key: ${pdfKey})`);
   } catch (err) {
