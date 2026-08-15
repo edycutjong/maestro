@@ -1,3 +1,10 @@
+## [0.3.4](https://github.com/edycutjong/maestro/compare/v0.3.3...v0.3.4) (2026-08-15)
+
+
+### Bug Fixes
+
+* **deps:** resolve 1 dependency vulnerabilities via lockfile ([100456f](https://github.com/edycutjong/maestro/commit/100456f7b131ddfdd5cc3d4ea36afc1d77f96552))
+
 ## [0.3.3](https://github.com/edycutjong/maestro/compare/v0.3.2...v0.3.3) (2026-07-12)
 
 
