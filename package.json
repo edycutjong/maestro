@@ -30,7 +30,7 @@
   "dependencies": {
     "@croo-network/sdk": "^0.2.1",
     "@edycutjong/croo-core": "^0.5.1",
-    "pdfkit": "^0.19.1"
+    "pdfkit": "^0.20.1"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
