@@ -35,7 +35,7 @@
   "devDependencies": {
     "@types/node": "^26.2.0",
     "@types/pdfkit": "^0.17.6",
-    "@vitest/coverage-v8": "^4.1.8",
+    "@vitest/coverage-v8": "^5.0.0",
     "eslint": "^10.8.1",
     "license-checker": "^25.0.1",
     "tsx": "^4.23.12",
